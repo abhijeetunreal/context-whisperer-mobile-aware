@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 
@@ -136,54 +135,95 @@ export const useObjectDetection = () => {
     };
   }, []);
 
-  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+  const generateNaturalLanguageContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
     if (objects.length === 0) {
-      return motion.isMotionDetected 
-        ? `Scene with ${motion.motionDirection} movement detected but no clear objects identified`
-        : 'Environment visible but no specific objects currently detected';
+      if (motion.isMotionDetected) {
+        return `I can see movement in the scene with ${motion.motionDirection} motion, but I cannot clearly identify specific objects at the moment.`;
+      }
+      return 'The camera is active but I cannot identify any specific objects in the current view. The scene appears to be stable.';
     }
 
     const objectNames = objects.map(obj => obj.name);
     const uniqueObjects = [...new Set(objectNames)];
     
-    // Categorize objects
-    const people = objectNames.filter(name => name === 'person').length;
+    // Count people
+    const peopleCount = objectNames.filter(name => name === 'person').length;
+    
+    // Categorize other objects
+    const furniture = objectNames.filter(name => ['chair', 'couch', 'table', 'bed'].includes(name));
+    const electronics = objectNames.filter(name => ['laptop', 'phone', 'tv', 'computer', 'mouse', 'keyboard'].includes(name));
     const vehicles = objectNames.filter(name => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(name));
-    const furniture = objectNames.filter(name => ['chair', 'table', 'couch', 'bed'].includes(name));
-    const electronics = objectNames.filter(name => ['laptop', 'phone', 'tv', 'computer'].includes(name));
+    const kitchenItems = objectNames.filter(name => ['bottle', 'cup', 'bowl', 'spoon', 'knife', 'fork'].includes(name));
+    const books = objectNames.filter(name => ['book'].includes(name));
     
-    let context = '';
+    let description = '';
     
-    if (people > 0) {
-      context += `${people} ${people === 1 ? 'person' : 'people'} detected. `;
+    // Start with people
+    if (peopleCount > 0) {
+      if (peopleCount === 1) {
+        description += 'I can see one person in the scene. ';
+      } else {
+        description += `I can see ${peopleCount} people in the scene. `;
+      }
     }
     
-    if (vehicles.length > 0) {
-      context += `Transportation vehicles including ${vehicles[0]} visible. `;
-    }
-    
-    if (furniture.length > 0 && electronics.length > 0) {
-      context += 'Indoor workspace with furniture and technology. ';
+    // Add environment context based on objects
+    if (electronics.length > 0 && furniture.length > 0) {
+      description += 'This appears to be a workspace or office environment with electronic devices and furniture. ';
+    } else if (kitchenItems.length > 0) {
+      description += 'This looks like a kitchen or dining area with food-related items visible. ';
+    } else if (books.length > 0) {
+      description += 'This seems to be a study or reading area. ';
+    } else if (vehicles.length > 0) {
+      description += 'I can see vehicles, suggesting this is likely an outdoor or parking area. ';
     } else if (furniture.length > 0) {
-      context += 'Indoor environment with furniture. ';
+      description += 'This appears to be an indoor living space with furniture. ';
     }
     
-    const topObjects = objects
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, 3)
-      .map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`)
-      .join(', ');
-    
-    context += `Main objects: ${topObjects}. `;
-    
-    if (motion.isMotionDetected) {
-      context += `Active ${motion.motionDirection} movement with ${motion.motionLevel}% intensity.`;
+    // Add specific objects
+    if (uniqueObjects.length <= 3) {
+      const objectList = uniqueObjects.filter(obj => obj !== 'person').join(', ');
+      if (objectList) {
+        description += `Specifically, I can identify: ${objectList}. `;
+      }
     } else {
-      context += 'Scene is stable with minimal movement.';
+      const topObjects = objects
+        .filter(obj => obj.name !== 'person')
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3)
+        .map(obj => obj.name);
+      if (topObjects.length > 0) {
+        description += `Among other items, I can clearly see: ${topObjects.join(', ')}. `;
+      }
+    }
+    
+    // Add motion information
+    if (motion.isMotionDetected) {
+      if (motion.motionDirection === 'general') {
+        description += `There is active movement in the scene. `;
+      } else {
+        description += `I detect ${motion.motionDirection} movement with ${motion.motionLevel.toFixed(0)}% intensity. `;
+      }
+    } else {
+      description += 'The scene is currently stable with minimal movement. ';
+    }
+    
+    // Add confidence summary
+    const avgConfidence = objects.reduce((sum, obj) => sum + obj.confidence, 0) / objects.length;
+    if (avgConfidence > 0.6) {
+      description += 'Object identification confidence is high.';
+    } else if (avgConfidence > 0.4) {
+      description += 'Object identification confidence is moderate.';
+    } else {
+      description += 'Object identification confidence is lower due to lighting or camera conditions.';
     }
 
-    return context;
+    return description;
   }, []);
+
+  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+    return generateNaturalLanguageContext(objects, motion);
+  }, [generateNaturalLanguageContext]);
 
   const detectObjects = useCallback(async (videoElement: HTMLVideoElement): Promise<ObjectDetectionResult | null> => {
     if (!objectDetectorRef.current || !isReady) {
@@ -230,11 +270,12 @@ export const useObjectDetection = () => {
           width: detection.boundingBox?.width || 0,
           height: detection.boundingBox?.height || 0
         }
-      })).filter(obj => obj.confidence > 0.3);
+      })).filter(obj => obj.confidence > 0.25);
 
       console.log('Filtered objects:', objects.length, objects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`));
       
-      const environmentContext = generateEnvironmentContext(objects, motion);
+      // Generate natural language environment context
+      const environmentContext = generateNaturalLanguageContext(objects, motion);
       
       let description = '';
       if (objects.length === 0) {
@@ -258,7 +299,7 @@ export const useObjectDetection = () => {
       };
 
       setLastDetection(result);
-      console.log('Detection result:', result);
+      console.log('Detection result with natural language:', result);
       
       return result;
     } catch (err) {
@@ -266,7 +307,7 @@ export const useObjectDetection = () => {
       setError(err instanceof Error ? err.message : 'Detection failed');
       return null;
     }
-  }, [isReady, analyzeMotion, generateEnvironmentContext, lastDetection]);
+  }, [isReady, analyzeMotion, generateNaturalLanguageContext, lastDetection]);
 
   return {
     isLoading,

@@ -16,112 +16,64 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       return;
     }
 
-    console.log('Speaking text:', text.substring(0, 50) + '...');
-    setError(null);
-
-    if (!apiKey) {
-      console.log('Using browser speech synthesis');
-      try {
-        // Stop any ongoing speech
-        speechSynthesis.cancel();
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 1;
-        utterance.volume = 0.8;
-        
-        utterance.onstart = () => {
-          console.log('Browser speech started');
-          setIsSpeaking(true);
-        };
-        utterance.onend = () => {
-          console.log('Browser speech ended');
-          setIsSpeaking(false);
-        };
-        utterance.onerror = (event) => {
-          console.error('Browser speech error:', event);
-          setIsSpeaking(false);
-          setError('Speech synthesis failed');
-        };
-        
-        speechSynthesis.speak(utterance);
-      } catch (err) {
-        console.error('Browser speech synthesis error:', err);
-        setError('Browser speech not supported');
-      }
-      return;
-    }
-
-    try {
-      setIsSpeaking(true);
-
-      console.log('Using ElevenLabs API...');
-      const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          text: text,
-          model_id: 'eleven_turbo_v2',
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.5,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status}`);
-      }
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      
-      audio.oncanplaythrough = () => {
-        console.log('ElevenLabs audio ready to play');
-      };
-      
-      audio.onended = () => {
-        console.log('ElevenLabs audio ended');
-        setIsSpeaking(false);
-        URL.revokeObjectURL(audioUrl);
-      };
-      
-      audio.onerror = (event) => {
-        console.error('ElevenLabs audio playback error:', event);
-        setIsSpeaking(false);
-        setError('Audio playback failed');
-        URL.revokeObjectURL(audioUrl);
-      };
-
-      await audio.play();
-      console.log('ElevenLabs audio playing');
-    } catch (err) {
-      console.error('ElevenLabs TTS error:', err);
+    // Stop any ongoing speech first
+    if (isSpeaking) {
+      speechSynthesis.cancel();
       setIsSpeaking(false);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      
-      // Fallback to browser speech
-      console.log('Falling back to browser speech synthesis');
-      try {
-        speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
-        speechSynthesis.speak(utterance);
-      } catch (fallbackErr) {
-        console.error('Fallback speech also failed:', fallbackErr);
-      }
     }
-  }, [apiKey, voiceId]);
+
+    console.log('Speaking text:', text);
+    setError(null);
+    setIsSpeaking(true);
+
+    // Always use browser speech for reliability
+    try {
+      speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.8;
+      utterance.pitch = 1;
+      utterance.volume = 0.9;
+      
+      // Wait for voices to load
+      const voices = speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        // Prefer female voice for accessibility
+        const preferredVoice = voices.find(voice => 
+          voice.name.toLowerCase().includes('female') || 
+          voice.name.toLowerCase().includes('samantha') ||
+          voice.name.toLowerCase().includes('karen')
+        ) || voices[0];
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.onstart = () => {
+        console.log('Voice description started');
+        setIsSpeaking(true);
+      };
+      
+      utterance.onend = () => {
+        console.log('Voice description completed');
+        setIsSpeaking(false);
+      };
+      
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+        setIsSpeaking(false);
+        setError('Voice synthesis failed');
+      };
+      
+      speechSynthesis.speak(utterance);
+      
+    } catch (err) {
+      console.error('Speech synthesis error:', err);
+      setError('Voice system not available');
+      setIsSpeaking(false);
+    }
+  }, [isSpeaking]);
 
   const stop = useCallback(() => {
-    console.log('Stopping speech');
+    console.log('Stopping voice description');
     speechSynthesis.cancel();
     setIsSpeaking(false);
   }, []);

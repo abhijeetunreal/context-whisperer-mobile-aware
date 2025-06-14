@@ -112,7 +112,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Context analysis and voice descriptions
+  // Context analysis and voice descriptions with improved triggering
   useEffect(() => {
     if (contextIntervalRef.current) {
       clearInterval(contextIntervalRef.current);
@@ -120,7 +120,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting context analysis...');
+      console.log('Starting enhanced context analysis with voice descriptions...');
       
       contextIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
@@ -133,27 +133,39 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             // Get current detection for voice description
             const objectResult = objectDetection.lastDetection;
             
-            if (objectResult && objectResult.environmentContext) {
-              console.log('Environment context available:', objectResult.environmentContext);
+            if (objectResult) {
+              console.log('Processing voice description for context:', objectResult.environmentContext);
               
               // Voice announcements for accessibility
               if (voiceEnabled && !textToSpeech.isSpeaking) {
-                const contextDescription = objectResult.environmentContext;
+                const naturalDescription = objectResult.environmentContext;
                 
-                if (lastSpokenContextRef.current !== contextDescription) {
-                  console.log('Speaking new context:', contextDescription);
-                  textToSpeech.speak(contextDescription);
-                  lastSpokenContextRef.current = contextDescription;
+                // Only speak if we have meaningful content and it's different from last spoken
+                if (naturalDescription && 
+                    naturalDescription.length > 10 && 
+                    lastSpokenContextRef.current !== naturalDescription) {
+                  
+                  console.log('Triggering voice description:', naturalDescription.substring(0, 100) + '...');
+                  await textToSpeech.speak(naturalDescription);
+                  lastSpokenContextRef.current = naturalDescription;
                 }
               }
+              
+              // Pass context to parent if available from context detection
+              if (contextDetection.detectedContext) {
+                onContextDetected(contextDetection.detectedContext);
+              }
+            } else {
+              console.log('No object detection result available for voice description');
             }
+            
           } catch (error) {
             console.error('Context analysis error:', error);
           } finally {
             setIsAnalyzingContext(false);
           }
         }
-      }, 8000); // Every 8 seconds for context analysis
+      }, 5000); // Every 5 seconds for context analysis and voice
     }
 
     return () => {
@@ -162,7 +174,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         contextIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking, contextDetection.processFrame, objectDetection.lastDetection, textToSpeech.speak]);
+  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking, contextDetection.processFrame, objectDetection.lastDetection, textToSpeech.speak, onContextDetected, contextDetection.detectedContext]);
 
   // Pass detected context to parent
   useEffect(() => {
