@@ -3,17 +3,26 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, ArrowRight, Check, X, Sparkles } from 'lucide-react';
+import { Lightbulb, ArrowRight, Check, X, Sparkles, Plus, StickyNote } from 'lucide-react';
 
 interface SuggestionPanelProps {
   suggestions: string[];
   context: {
+    id: string;
     name: string;
     color: string;
+    confidence?: number;
   };
+  onAddNote?: (suggestion: string) => void;
+  onAddReminder?: (suggestion: string) => void;
 }
 
-const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ suggestions, context }) => {
+const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ 
+  suggestions, 
+  context, 
+  onAddNote, 
+  onAddReminder 
+}) => {
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<number>>(new Set());
   const [acceptedSuggestions, setAcceptedSuggestions] = useState<Set<number>>(new Set());
 
@@ -25,9 +34,36 @@ const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ suggestions, context 
     setDismissedSuggestions(prev => new Set([...prev, index]));
   };
 
+  const handleAddNote = (suggestion: string) => {
+    if (onAddNote) {
+      onAddNote(`Context Note: ${suggestion} (from ${context.name})`);
+    }
+  };
+
+  const handleAddReminder = (suggestion: string) => {
+    if (onAddReminder) {
+      onAddReminder(`Reminder: ${suggestion} (based on ${context.name})`);
+    }
+  };
+
   const activeSuggestions = suggestions.filter((_, index) => 
     !dismissedSuggestions.has(index) && !acceptedSuggestions.has(index)
   );
+
+  if (!suggestions || suggestions.length === 0) {
+    return (
+      <Card className="p-6 relative overflow-hidden">
+        <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${context.color} opacity-10 rounded-full blur-2xl`} />
+        
+        <div className="relative z-10 text-center py-8">
+          <Sparkles className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+          <p className="text-slate-500">
+            No suggestions available for current context
+          </p>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-6 relative overflow-hidden">
@@ -45,6 +81,7 @@ const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ suggestions, context 
             </h3>
             <p className="text-slate-600 text-sm">
               Context-aware recommendations for {context.name}
+              {context.confidence && ` (${Math.round(context.confidence * 100)}% confidence)`}
             </p>
           </div>
           <Badge variant="outline" className="ml-auto flex items-center gap-1">
@@ -72,12 +109,28 @@ const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ suggestions, context 
                           Contextual
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
-                          Proactive
+                          {context.id}
                         </Badge>
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddNote(suggestion)}
+                        className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 h-8"
+                      >
+                        <StickyNote className="w-3 h-3 mr-1" />
+                        Note
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddReminder(suggestion)}
+                        className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 h-8"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Remind
+                      </Button>
                       <Button
                         size="sm"
                         onClick={() => handleAccept(index)}
@@ -105,10 +158,7 @@ const SuggestionPanel: React.FC<SuggestionPanelProps> = ({ suggestions, context 
           <div className="text-center py-8">
             <Sparkles className="w-12 h-12 text-slate-400 mx-auto mb-3" />
             <p className="text-slate-500">
-              {suggestions.length === 0 
-                ? "No suggestions available for current context"
-                : "All suggestions processed"
-              }
+              All suggestions processed
             </p>
           </div>
         )}

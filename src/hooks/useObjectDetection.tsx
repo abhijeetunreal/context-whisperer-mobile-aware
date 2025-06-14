@@ -43,7 +43,7 @@ export const useObjectDetection = () => {
     setError(null);
     
     try {
-      console.log('Initializing MediaPipe Object Detector with improved model...');
+      console.log('Initializing enhanced MediaPipe Object Detector for small objects...');
       
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
@@ -54,14 +54,14 @@ export const useObjectDetection = () => {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite",
           delegate: "GPU"
         },
-        scoreThreshold: 0.25,
-        maxResults: 10,
+        scoreThreshold: 0.15, // Lowered for better small object detection
+        maxResults: 15, // Increased for more objects
         runningMode: "VIDEO"
       });
       
       objectDetectorRef.current = objectDetector;
       setIsReady(true);
-      console.log('MediaPipe Object Detector initialized with EfficientDet Lite2');
+      console.log('Enhanced MediaPipe Object Detector initialized for small objects');
     } catch (err) {
       console.error('Failed to initialize MediaPipe:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize object detector');
@@ -145,8 +145,9 @@ export const useObjectDetection = () => {
     const uniqueObjects = [...new Set(objectTypes)];
     const peopleCount = objectTypes.filter(type => type === 'person').length;
     const hasVehicles = objectTypes.some(type => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(type));
-    const hasIndoorItems = objectTypes.some(type => ['chair', 'table', 'book', 'laptop', 'cup', 'bottle'].includes(type));
-    const hasOutdoorItems = objectTypes.some(type => ['tree', 'plant', 'bench', 'traffic light'].includes(type));
+    const hasIndoorItems = objectTypes.some(type => ['chair', 'table', 'book', 'laptop', 'cup', 'bottle', 'phone', 'remote', 'mouse', 'keyboard'].includes(type));
+    const hasOutdoorItems = objectTypes.some(type => ['tree', 'plant', 'bench', 'traffic light', 'stop sign'].includes(type));
+    const hasSmallItems = objectTypes.some(type => ['cup', 'bottle', 'phone', 'book', 'remote', 'mouse', 'spoon', 'fork', 'knife'].includes(type));
 
     let context = '';
     
@@ -164,6 +165,11 @@ export const useObjectDetection = () => {
     // People and activity
     if (peopleCount > 0) {
       context += `with ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'} `;
+    }
+
+    // Small items context
+    if (hasSmallItems) {
+      context += 'including small handheld objects ';
     }
 
     // Motion context
@@ -221,34 +227,39 @@ export const useObjectDetection = () => {
         }
       }));
 
-      // Filter objects with confidence > 0.3 for better accuracy
-      const highConfidenceObjects = objects.filter(obj => obj.confidence > 0.3);
+      // Lower confidence threshold for small objects
+      const validObjects = objects.filter(obj => obj.confidence > 0.2);
       
-      const environmentContext = generateEnvironmentContext(highConfidenceObjects, motion);
+      const environmentContext = generateEnvironmentContext(validObjects, motion);
       
-      // Create detailed description for voice feedback
+      // Enhanced description for small objects
       let description = '';
-      if (highConfidenceObjects.length === 0) {
+      if (validObjects.length === 0) {
         description = motion.isMotionDetected 
           ? `I detect ${motion.motionDirection} movement but no clear objects are visible`
           : 'No clear objects detected in the current view';
-      } else if (highConfidenceObjects.length === 1) {
-        const obj = highConfidenceObjects[0];
-        description = `I can see a ${obj.name} with ${Math.round(obj.confidence * 100)}% confidence`;
+      } else if (validObjects.length === 1) {
+        const obj = validObjects[0];
+        const size = obj.boundingBox.width * obj.boundingBox.height < 0.01 ? 'small ' : '';
+        description = `I can see a ${size}${obj.name} with ${Math.round(obj.confidence * 100)}% confidence`;
         if (motion.isMotionDetected) {
           description += ` with ${motion.motionDirection} motion detected`;
         }
       } else {
-        const objectNames = highConfidenceObjects.map(obj => obj.name);
+        const objectNames = validObjects.map(obj => obj.name);
         const uniqueObjects = [...new Set(objectNames)];
-        description = `I can see ${highConfidenceObjects.length} objects: ${uniqueObjects.join(', ')}`;
+        const smallObjects = validObjects.filter(obj => obj.boundingBox.width * obj.boundingBox.height < 0.01);
+        description = `I can see ${validObjects.length} objects: ${uniqueObjects.join(', ')}`;
+        if (smallObjects.length > 0) {
+          description += ` including ${smallObjects.length} small items`;
+        }
         if (motion.isMotionDetected) {
           description += ` with ${motion.motionDirection} movement in the scene`;
         }
       }
 
       const result: ObjectDetectionResult = {
-        objects: highConfidenceObjects,
+        objects: validObjects,
         timestamp: new Date(),
         description,
         motion,
@@ -256,7 +267,7 @@ export const useObjectDetection = () => {
       };
 
       setLastDetection(result);
-      console.log('Enhanced detection result:', result);
+      console.log('Enhanced detection result with small objects:', result);
       
       return result;
     } catch (err) {

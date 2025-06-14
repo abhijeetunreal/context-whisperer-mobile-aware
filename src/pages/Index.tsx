@@ -9,6 +9,22 @@ import PrivacyControls from '@/components/PrivacyControls';
 import SuggestionPanel from '@/components/SuggestionPanel';
 import CameraFeed from '@/components/CameraFeed';
 import AccessibilityControls from '@/components/AccessibilityControls';
+import NotesReminders from '@/components/NotesReminders';
+
+interface Note {
+  id: string;
+  content: string;
+  timestamp: Date;
+  context?: string;
+}
+
+interface Reminder {
+  id: string;
+  content: string;
+  timestamp: Date;
+  context?: string;
+  completed: boolean;
+}
 
 const Index = () => {
   const [isActive, setIsActive] = useState(false);
@@ -16,12 +32,14 @@ const Index = () => {
   const [contextHistory, setContextHistory] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [privacyMode, setPrivacyMode] = useState('balanced');
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   
   // Accessibility states
   const [apiKey, setApiKey] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
-  // Context mapping with rich data
+  // Context mapping with enhanced suggestions
   const contextMapping = {
     'office': {
       id: 'office',
@@ -31,7 +49,9 @@ const Index = () => {
       suggestions: [
         'Enable focus mode to minimize distractions',
         'Check your calendar for upcoming meetings',
-        'Set reminder to follow up on action items'
+        'Set reminder to follow up on action items',
+        'Take a 5-minute break to rest your eyes',
+        'Review and organize your workspace'
       ],
       color: 'from-blue-400 to-blue-600'
     },
@@ -43,7 +63,9 @@ const Index = () => {
       suggestions: [
         'Weather update for your location',
         'Nearby points of interest',
-        'Outdoor activity suggestions'
+        'Outdoor activity suggestions',
+        'Check UV index and sun protection',
+        'Take photos of interesting sights'
       ],
       color: 'from-green-400 to-emerald-600'
     },
@@ -55,7 +77,9 @@ const Index = () => {
       suggestions: [
         'Set a reading break reminder in 15 minutes',
         'Create notes section for key insights',
-        'Adjust screen brightness for better reading'
+        'Adjust screen brightness for better reading',
+        'Use the Pomodoro technique for focused study',
+        'Bookmark important pages or sections'
       ],
       color: 'from-purple-400 to-violet-600'
     },
@@ -67,7 +91,9 @@ const Index = () => {
       suggestions: [
         'Meeting agenda template available',
         'Enable presentation mode',
-        'Mute notifications during meeting'
+        'Mute notifications during meeting',
+        'Prepare notes for meeting discussion',
+        'Set follow-up reminders for action items'
       ],
       color: 'from-indigo-400 to-purple-500'
     },
@@ -79,7 +105,9 @@ const Index = () => {
       suggestions: [
         'Adjust display brightness automatically',
         'Enable dark mode for better visibility',
-        'Suggest optimal lighting for current activity'
+        'Suggest optimal lighting for current activity',
+        'Consider using voice commands in low light',
+        'Set up ambient lighting for comfort'
       ],
       color: 'from-slate-400 to-slate-600'
     },
@@ -91,7 +119,9 @@ const Index = () => {
       suggestions: [
         'Recipe suggestions based on visible ingredients',
         'Timer for cooking activities',
-        'Safety reminders for kitchen tasks'
+        'Safety reminders for kitchen tasks',
+        'Meal planning and grocery list creation',
+        'Nutrition tracking for prepared meals'
       ],
       color: 'from-orange-400 to-red-500'
     },
@@ -103,11 +133,59 @@ const Index = () => {
       suggestions: [
         'Context-aware suggestions will appear here',
         'Optimize settings based on surroundings',
-        'Personalized recommendations available'
+        'Personalized recommendations available',
+        'Explore voice commands for accessibility',
+        'Set up custom context preferences'
       ],
       color: 'from-gray-400 to-gray-600'
     }
   };
+
+  // Notes and Reminders Management
+  const handleAddNote = useCallback((content: string, context?: string) => {
+    const newNote: Note = {
+      id: Date.now().toString(),
+      content,
+      timestamp: new Date(),
+      context
+    };
+    setNotes(prev => [newNote, ...prev]);
+  }, []);
+
+  const handleAddReminder = useCallback((content: string, context?: string) => {
+    const newReminder: Reminder = {
+      id: Date.now().toString(),
+      content,
+      timestamp: new Date(),
+      context,
+      completed: false
+    };
+    setReminders(prev => [newReminder, ...prev]);
+  }, []);
+
+  const handleDeleteNote = useCallback((id: string) => {
+    setNotes(prev => prev.filter(note => note.id !== id));
+  }, []);
+
+  const handleDeleteReminder = useCallback((id: string) => {
+    setReminders(prev => prev.filter(reminder => reminder.id !== id));
+  }, []);
+
+  const handleToggleReminder = useCallback((id: string) => {
+    setReminders(prev => prev.map(reminder => 
+      reminder.id === id 
+        ? { ...reminder, completed: !reminder.completed }
+        : reminder
+    ));
+  }, []);
+
+  const handleUpdateNote = useCallback((id: string, content: string) => {
+    setNotes(prev => prev.map(note => 
+      note.id === id 
+        ? { ...note, content }
+        : note
+    ));
+  }, []);
 
   const handleToggleActive = () => {
     setIsActive(!isActive);
@@ -136,7 +214,7 @@ const Index = () => {
     // Only update if context actually changed
     if (!currentContext || currentContext.id !== enrichedContext.id) {
       setCurrentContext(enrichedContext);
-      setSuggestions(enrichedContext.suggestions);
+      setSuggestions(enrichedContext.suggestions || []);
       
       // Add to history
       setContextHistory(prev => [
@@ -150,7 +228,6 @@ const Index = () => {
   }, [currentContext]);
 
   const handleStopSpeaking = () => {
-    // This would be handled by the text-to-speech hook in CameraFeed
     console.log('Stop speaking requested');
   };
 
@@ -215,7 +292,7 @@ const Index = () => {
               setApiKey={setApiKey}
               voiceEnabled={voiceEnabled}
               setVoiceEnabled={setVoiceEnabled}
-              isSpeaking={false} // This would come from the text-to-speech hook
+              isSpeaking={false}
               onStopSpeaking={handleStopSpeaking}
             />
 
@@ -255,12 +332,27 @@ const Index = () => {
               <SuggestionPanel 
                 suggestions={suggestions}
                 context={currentContext}
+                onAddNote={handleAddNote}
+                onAddReminder={handleAddReminder}
               />
             )}
           </div>
 
-          {/* Context History Sidebar */}
+          {/* Sidebar */}
           <div className="space-y-6">
+            {/* Notes & Reminders */}
+            <NotesReminders
+              notes={notes}
+              reminders={reminders}
+              onAddNote={handleAddNote}
+              onAddReminder={handleAddReminder}
+              onDeleteNote={handleDeleteNote}
+              onDeleteReminder={handleDeleteReminder}
+              onToggleReminder={handleToggleReminder}
+              onUpdateNote={handleUpdateNote}
+            />
+
+            {/* Context History */}
             <Card className="p-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Settings className="w-5 h-5" />
