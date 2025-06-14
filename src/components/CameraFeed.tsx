@@ -117,7 +117,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Dedicated voice description interval - every 3 seconds
+  // Voice description interval - every 3 seconds when voice is enabled
   useEffect(() => {
     if (voiceIntervalRef.current) {
       clearInterval(voiceIntervalRef.current);
@@ -125,52 +125,50 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && voiceEnabled && objectDetection.isReady) {
-      console.log('Starting dedicated voice description interval every 3 seconds...');
+      console.log('🎤 Starting voice description interval every 3 seconds...');
       
-      voiceIntervalRef.current = setInterval(async () => {
+      // Start immediately, then every 3 seconds
+      const triggerVoiceDescription = async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
-          console.log('Voice interval triggered - checking for content to speak...');
+          console.log('🎤 Voice interval triggered - generating description...');
           
           try {
             const objectResult = objectDetection.lastDetection;
             
             if (objectResult && objectResult.environmentContext) {
-              const naturalDescription = objectResult.environmentContext;
-              console.log('Voice description available:', naturalDescription.substring(0, 100) + '...');
+              const description = objectResult.environmentContext;
+              console.log('🎤 Voice description ready:', description.substring(0, 100) + '...');
               
-              // Always speak if we have new content and voice is not currently active
-              if (naturalDescription && 
-                  naturalDescription.length > 20 && 
-                  !textToSpeech.isSpeaking &&
-                  lastSpokenContextRef.current !== naturalDescription) {
-                
-                console.log('🎤 Triggering voice description:', naturalDescription);
-                await textToSpeech.speak(naturalDescription);
-                lastSpokenContextRef.current = naturalDescription;
+              // Only speak if we're not currently speaking and have new content
+              if (!textToSpeech.isSpeaking && description !== lastSpokenContextRef.current) {
+                console.log('🎤 Speaking description now...');
+                lastSpokenContextRef.current = description;
+                await textToSpeech.speak(description);
               } else if (textToSpeech.isSpeaking) {
-                console.log('Voice already speaking, skipping this cycle');
-              } else if (lastSpokenContextRef.current === naturalDescription) {
-                console.log('Same content as before, skipping repetition');
+                console.log('🎤 Already speaking, skipping...');
               } else {
-                console.log('Content too short or empty, skipping');
+                console.log('🎤 Same content as before, skipping...');
               }
             } else {
-              console.log('No object detection result or environment context available');
-              
-              // Provide basic fallback description if no objects detected
-              if (!textToSpeech.isSpeaking) {
-                const fallbackDescription = "I'm actively monitoring the environment but cannot clearly identify specific objects at the moment. The camera feed is active and processing.";
-                console.log('🎤 Providing fallback description');
-                await textToSpeech.speak(fallbackDescription);
+              // Fallback description when no objects detected
+              const fallbackDescription = "I'm actively monitoring the environment. The camera is working and scanning for objects and activities.";
+              if (!textToSpeech.isSpeaking && fallbackDescription !== lastSpokenContextRef.current) {
+                console.log('🎤 Using fallback description');
                 lastSpokenContextRef.current = fallbackDescription;
+                await textToSpeech.speak(fallbackDescription);
               }
             }
-            
           } catch (error) {
-            console.error('Voice description error:', error);
+            console.error('🎤 Voice description error:', error);
           }
         }
-      }, 3000); // Every 3 seconds
+      };
+
+      // Trigger immediately
+      triggerVoiceDescription();
+      
+      // Then set up interval
+      voiceIntervalRef.current = setInterval(triggerVoiceDescription, 3000);
     }
 
     return () => {
@@ -179,7 +177,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         voiceIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, voiceEnabled, objectDetection.isReady, textToSpeech.isSpeaking, objectDetection.lastDetection, textToSpeech.speak]);
+  }, [camera.isActive, voiceEnabled, objectDetection.isReady, objectDetection.lastDetection, textToSpeech.isSpeaking, textToSpeech.speak]);
 
   // Context analysis interval - separate from voice
   useEffect(() => {
