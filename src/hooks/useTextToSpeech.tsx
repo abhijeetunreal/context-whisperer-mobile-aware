@@ -13,6 +13,7 @@ interface EnvironmentState {
   lastSpokenTime: number;
   spokenPhrases: Set<string>;
   lastSignificantChange: number;
+  lastTextDetection: number;
 }
 
 export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: TextToSpeechOptions) => {
@@ -24,66 +25,29 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     lastEnvironmentType: '',
     lastSpokenTime: 0,
     spokenPhrases: new Set(),
-    lastSignificantChange: 0
+    lastSignificantChange: 0,
+    lastTextDetection: 0
   });
 
-  const detectTextInImage = useCallback(async (videoElement: HTMLVideoElement): Promise<string[]> => {
-    try {
-      // Create canvas to capture frame
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return [];
-
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
-      ctx.drawImage(videoElement, 0, 0);
-
-      // Simple text detection using image analysis
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      
-      // Look for text-like patterns (high contrast edges, horizontal/vertical lines)
-      let textRegions = 0;
-      let highContrastPixels = 0;
-      
-      for (let i = 0; i < data.length; i += 16) {
-        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        const nextBrightness = (data[i + 4] + data[i + 5] + data[i + 6]) / 3;
-        const contrast = Math.abs(brightness - nextBrightness);
-        
-        if (contrast > 50) {
-          highContrastPixels++;
-        }
-      }
-      
-      // If significant text-like patterns detected
-      if (highContrastPixels > canvas.width * canvas.height * 0.02) {
-        textRegions++;
-        return ['text detected in image'];
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Text detection error:', error);
-      return [];
-    }
-  }, []);
-
-  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, detectedText?: string[]): string => {
+  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, hasTextDetected?: boolean): string => {
     const now = Date.now();
     const timeSinceLastSpoken = now - environmentStateRef.current.lastSpokenTime;
     const timeSinceLastChange = now - environmentStateRef.current.lastSignificantChange;
+    const timeSinceLastText = now - environmentStateRef.current.lastTextDetection;
     const previousObjects = environmentStateRef.current.lastObjects;
     const previousEnvironment = environmentStateRef.current.lastEnvironmentType;
     
-    // If text is detected, prioritize text description
-    if (detectedText && detectedText.length > 0) {
-      const textDescription = "I can see text or writing in the view.";
-      if (!environmentStateRef.current.spokenPhrases.has(textDescription) || timeSinceLastSpoken > 15000) {
-        environmentStateRef.current.spokenPhrases.add(textDescription);
-        return textDescription;
-      }
-      return ''; // Skip if text description was recently spoken
+    // Prioritize text detection - only speak if text was recently detected
+    if (hasTextDetected && timeSinceLastText > 8000) {
+      const textDescription = "Text or writing detected in the view.";
+      environmentStateRef.current.lastTextDetection = now;
+      environmentStateRef.current.lastSpokenTime = now;
+      return textDescription;
+    }
+    
+    // If text is detected, skip other descriptions
+    if (hasTextDetected) {
+      return '';
     }
     
     // Detect significant changes
@@ -104,7 +68,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     let description = '';
     
     // Only speak if there's a significant change or enough time has passed
-    if (!hasSignificantChange && !environmentChanged && timeSinceLastSpoken < 12000) {
+    if (!hasSignificantChange && !environmentChanged && timeSinceLastSpoken < 15000) {
       return ''; // Skip repetitive descriptions
     }
     
@@ -112,19 +76,19 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     if (environmentChanged) {
       switch (currentEnvironmentType) {
         case 'kitchen':
-          description = "Moved to a kitchen area. ";
+          description = "Kitchen area detected. ";
           break;
         case 'office':
-          description = "Now in a workspace environment. ";
+          description = "Workspace environment detected. ";
           break;
         case 'outdoor':
-          description = "View changed to outdoors. ";
+          description = "Outdoor environment detected. ";
           break;
         case 'indoor':
-          description = "Moved to an indoor space. ";
+          description = "Indoor space detected. ";
           break;
         case 'vehicle':
-          description = "Now in or near a vehicle. ";
+          description = "Vehicle detected. ";
           break;
       }
       environmentStateRef.current.lastSignificantChange = now;
@@ -135,48 +99,39 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       if (newObjects.length === 1) {
         const obj = newObjects[0];
         if (obj === 'person') {
-          description += "Someone appeared in view. ";
+          description += "Person detected. ";
         } else if (['car', 'truck', 'bus'].includes(obj)) {
-          description += `A ${obj} came into sight. `;
+          description += `${obj} detected. `;
         } else if (['cat', 'dog', 'bird'].includes(obj)) {
-          description += `A ${obj} is now visible. `;
+          description += `${obj} detected. `;
         } else {
-          description += `${obj} appeared. `;
+          description += `${obj} detected. `;
         }
       } else if (newObjects.length <= 3) {
-        description += `New objects: ${newObjects.slice(0, 2).join(', ')}${newObjects.length > 2 ? ' and more' : ''}. `;
+        description += `Multiple objects detected: ${newObjects.slice(0, 2).join(', ')}. `;
       }
       environmentStateRef.current.lastSignificantChange = now;
     }
     
-    // Movement detection
-    if (reasoning.includes('motion') || reasoning.includes('moving')) {
-      if (reasoning.includes('person') && !description.includes('Someone')) {
-        description += "Movement detected. ";
-      } else if (reasoning.includes('vehicle') && !description.includes('vehicle')) {
-        description += "Vehicle movement. ";
-      }
-    }
-    
     // Avoid repetitive fallback phrases
-    if (!description && timeSinceLastChange > 20000 && currentObjects.length > 0) {
+    if (!description && timeSinceLastChange > 25000 && currentObjects.length > 0) {
       const dominantObjects = currentObjects.slice(0, 2);
       if (dominantObjects.includes('person')) {
-        description = "People present in the area. ";
+        description = "Person in view. ";
       } else if (dominantObjects.some(obj => ['car', 'truck', 'bus'].includes(obj))) {
-        description = "Vehicles in view. ";
+        description = "Vehicle in view. ";
       } else if (dominantObjects.length > 0) {
-        description = `Scene shows ${dominantObjects[0]}${dominantObjects.length > 1 ? ' and other items' : ''}. `;
+        description = `${dominantObjects[0]} detected. `;
       }
     }
     
-    // Check against recently spoken phrases
+    // Check against recently spoken phrases to avoid repetition
     const trimmedDescription = description.trim();
     if (trimmedDescription && !environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
       environmentStateRef.current.spokenPhrases.add(trimmedDescription);
       
       // Clear old phrases periodically
-      if (environmentStateRef.current.spokenPhrases.size > 10) {
+      if (environmentStateRef.current.spokenPhrases.size > 8) {
         environmentStateRef.current.spokenPhrases.clear();
       }
     } else if (environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
@@ -195,21 +150,15 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     return trimmedDescription;
   }, []);
 
-  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string, videoElement?: HTMLVideoElement) => {
+  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string, hasTextDetected?: boolean) => {
     if (!text || text.trim() === '') {
       return;
     }
 
-    // Detect text in image if video element is provided
-    let detectedText: string[] = [];
-    if (videoElement) {
-      detectedText = await detectTextInImage(videoElement);
-    }
-
     // Generate smart description that avoids repetition
     let processedText = text;
-    if (currentObjects && reasoning) {
-      processedText = generateSmartDescription(text, currentObjects, reasoning, detectedText);
+    if (currentObjects && reasoning !== undefined) {
+      processedText = generateSmartDescription(text, currentObjects, reasoning, hasTextDetected);
     }
 
     // Skip if no meaningful content to speak
@@ -284,7 +233,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       setError(err instanceof Error ? err.message : 'Speech synthesis failed');
       setIsSpeaking(false);
     }
-  }, [generateSmartDescription, detectTextInImage]);
+  }, [generateSmartDescription]);
 
   const stop = useCallback(() => {
     speechSynthesis.cancel();
@@ -298,7 +247,8 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       lastEnvironmentType: '',
       lastSpokenTime: 0,
       spokenPhrases: new Set(),
-      lastSignificantChange: 0
+      lastSignificantChange: 0,
+      lastTextDetection: 0
     };
   }, []);
 

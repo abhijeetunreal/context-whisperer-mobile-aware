@@ -6,6 +6,7 @@ import { Camera, CameraOff, Eye, AlertCircle, Volume2, Loader2, Activity } from 
 import { useCamera } from '@/hooks/useCamera';
 import { useContextDetection } from '@/hooks/useContextDetection';
 import { useObjectDetection } from '@/hooks/useObjectDetection';
+import { useTextDetection } from '@/hooks/useTextDetection';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
 import ObjectAnnotations from '@/components/ObjectAnnotations';
 
@@ -27,10 +28,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const camera = useCamera();
   const contextDetection = useContextDetection();
   const objectDetection = useObjectDetection();
+  const textDetection = useTextDetection();
   const textToSpeech = useTextToSpeech({ apiKey });
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const contextIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const textDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [isAnalyzingContext, setIsAnalyzingContext] = useState(false);
@@ -49,11 +52,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, [camera.isActive]);
 
-  // Initialize MediaPipe object detection model when component mounts
+  // Initialize both MediaPipe object detection and text detection
   useEffect(() => {
-    console.log('Initializing MediaPipe ObjectDetector for enhanced accuracy...');
+    console.log('Initializing MediaPipe ObjectDetector and TextDetector...');
     objectDetection.initializeDetector();
-  }, [objectDetection.initializeDetector]);
+    textDetection.initializeTextDetection();
+  }, [objectDetection.initializeDetector, textDetection.initializeTextDetection]);
 
   // Start/stop camera based on isActive prop
   useEffect(() => {
@@ -82,6 +86,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       if (voiceIntervalRef.current) {
         clearInterval(voiceIntervalRef.current);
         voiceIntervalRef.current = null;
+      }
+      if (textDetectionIntervalRef.current) {
+        clearInterval(textDetectionIntervalRef.current);
+        textDetectionIntervalRef.current = null;
       }
     };
   }, []);
@@ -123,14 +131,46 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Enhanced voice description with text detection and smart change detection
+  // Dedicated text detection interval
+  useEffect(() => {
+    if (textDetectionIntervalRef.current) {
+      clearInterval(textDetectionIntervalRef.current);
+      textDetectionIntervalRef.current = null;
+    }
+
+    if (camera.isActive && camera.videoRef.current && textDetection.isReady) {
+      console.log('📝 Starting dedicated text detection...');
+      
+      textDetectionIntervalRef.current = setInterval(async () => {
+        if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
+          try {
+            const result = await textDetection.detectText(camera.videoRef.current);
+            if (result && result.hasText) {
+              console.log('📝 Text detected:', result.textRegions.length, 'regions');
+            }
+          } catch (error) {
+            console.error('📝 Text detection error:', error);
+          }
+        }
+      }, 1000); // Check for text every second
+    }
+
+    return () => {
+      if (textDetectionIntervalRef.current) {
+        clearInterval(textDetectionIntervalRef.current);
+        textDetectionIntervalRef.current = null;
+      }
+    };
+  }, [camera.isActive, textDetection.isReady, textDetection.detectText]);
+
+  // Enhanced voice description with proper text detection integration
   useEffect(() => {
     if (voiceIntervalRef.current) {
       clearInterval(voiceIntervalRef.current);
       voiceIntervalRef.current = null;
     }
 
-    if (camera.isActive && voiceEnabled && objectDetection.isReady) {
+    if (camera.isActive && voiceEnabled && (objectDetection.isReady || textDetection.isReady)) {
       console.log('🎤 Starting smart voice descriptions with text detection...');
       
       const triggerSmartVoiceDescription = async () => {
@@ -138,19 +178,33 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           console.log('🎤 Smart voice interval triggered...');
           
           try {
-            const objectResult = objectDetection.lastDetection;
+            // Check for text first - text detection takes priority
+            const hasText = textDetection.lastDetection?.hasText || false;
             
-            if (objectResult && !textToSpeech.isSpeaking) {
-              const currentObjects = objectResult.objects.map(obj => obj.name);
-              console.log('🎤 Current objects for smart voice:', currentObjects);
-              
-              // Pass video element for text detection
+            if (hasText) {
+              // If text is detected, only speak about text
+              console.log('🎤 Text detected, speaking about text...');
               await textToSpeech.speak(
-                objectResult.environmentContext, 
-                currentObjects, 
-                objectResult.reasoning,
-                camera.videoRef.current
+                'Text detected', 
+                [], 
+                'Text analysis',
+                hasText
               );
+            } else {
+              // If no text, proceed with object detection
+              const objectResult = objectDetection.lastDetection;
+              
+              if (objectResult && !textToSpeech.isSpeaking) {
+                const currentObjects = objectResult.objects.map(obj => obj.name);
+                console.log('🎤 No text, speaking about objects:', currentObjects);
+                
+                await textToSpeech.speak(
+                  objectResult.environmentContext, 
+                  currentObjects, 
+                  objectResult.reasoning,
+                  false
+                );
+              }
             }
           } catch (error) {
             console.error('🎤 Smart voice description error:', error);
@@ -159,7 +213,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       };
 
       triggerSmartVoiceDescription();
-      voiceIntervalRef.current = setInterval(triggerSmartVoiceDescription, 5000);
+      voiceIntervalRef.current = setInterval(triggerSmartVoiceDescription, 3000);
     }
 
     return () => {
@@ -168,7 +222,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         voiceIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, voiceEnabled, objectDetection.isReady, objectDetection.lastDetection, textToSpeech.isSpeaking, textToSpeech.speak]);
+  }, [camera.isActive, voiceEnabled, objectDetection.isReady, textDetection.isReady, objectDetection.lastDetection, textDetection.lastDetection, textToSpeech.isSpeaking, textToSpeech.speak]);
 
   // Context analysis interval - separate from voice
   useEffect(() => {
@@ -244,9 +298,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">Enhanced Object Detection</h3>
+            <h3 className="font-semibold text-slate-800">Enhanced Detection with Text Recognition</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Smart tracking with text detection' : 'Camera inactive'}
+              {camera.isActive ? 'Object tracking and text detection active' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -263,6 +317,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
               Analyzing
             </Badge>
           )}
+          {textDetection.lastDetection?.hasText && (
+            <Badge variant="outline" className="flex items-center gap-1 bg-purple-50">
+              <AlertCircle className="w-3 h-3 text-purple-600" />
+              Text Found
+            </Badge>
+          )}
           {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
               <Activity className="w-3 h-3 text-green-600" />
@@ -272,7 +332,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {textToSpeech.isSpeaking && voiceEnabled && (
             <Badge variant="outline" className="flex items-center gap-1 bg-purple-50">
               <Volume2 className="w-3 h-3 animate-pulse text-purple-600" />
-              Smart Voice
+              Speaking
             </Badge>
           )}
           <Button 
@@ -294,6 +354,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       {objectDetection.error && (
         <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
           <p className="text-sm text-orange-700">MediaPipe Detection error: {objectDetection.error}</p>
+        </div>
+      )}
+
+      {textDetection.error && (
+        <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+          <p className="text-sm text-orange-700">Text detection error: {textDetection.error}</p>
         </div>
       )}
 
@@ -388,6 +454,26 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           </div>
           <p className="text-xs text-green-600">
             {objectDetection.lastDetection.reasoning}
+          </p>
+        </div>
+      )}
+
+      {/* Text Detection Results */}
+      {textDetection.lastDetection && textDetection.lastDetection.hasText && (
+        <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+          <h4 className="font-medium text-purple-800 mb-1">Text Detection Active</h4>
+          <p className="text-sm text-purple-700 mb-2">
+            Text or writing detected in the camera view
+          </p>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {textDetection.lastDetection.textRegions.slice(0, 3).map((region, index) => (
+              <Badge key={index} variant="outline" className="text-xs bg-purple-100">
+                Text Region ({Math.round(region.confidence * 100)}%)
+              </Badge>
+            ))}
+          </div>
+          <p className="text-xs text-purple-600">
+            {textDetection.lastDetection.textRegions.length} text regions detected
           </p>
         </div>
       )}
