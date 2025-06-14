@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 
@@ -35,6 +34,7 @@ export const useObjectDetection = () => {
   
   const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const previousFrameRef = useRef<ImageData | null>(null);
+  const detectionHistoryRef = useRef<DetectedObject[][]>([]);
 
   const initializeDetector = useCallback(async () => {
     if (objectDetectorRef.current) return;
@@ -43,25 +43,26 @@ export const useObjectDetection = () => {
     setError(null);
     
     try {
-      console.log('Initializing enhanced MediaPipe Object Detector for small objects...');
+      console.log('Initializing enhanced MediaPipe Object Detector with improved accuracy...');
       
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
       
+      // Using EfficientDet Lite0 for better small object detection and real-time performance
       const objectDetector = await ObjectDetector.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite",
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
           delegate: "GPU"
         },
-        scoreThreshold: 0.15, // Lowered for better small object detection
-        maxResults: 15, // Increased for more objects
+        scoreThreshold: 0.1, // Lower threshold for better small object detection
+        maxResults: 20, // More objects for comprehensive detection
         runningMode: "VIDEO"
       });
       
       objectDetectorRef.current = objectDetector;
       setIsReady(true);
-      console.log('Enhanced MediaPipe Object Detector initialized for small objects');
+      console.log('Enhanced MediaPipe Object Detector initialized with improved accuracy');
     } catch (err) {
       console.error('Failed to initialize MediaPipe:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize object detector');
@@ -87,17 +88,16 @@ export const useObjectDetection = () => {
     let horizontalMotion = 0;
     let verticalMotion = 0;
 
-    // Sample every 4th pixel for performance
-    for (let i = 0; i < prev.length; i += 16) {
+    // Improved motion detection with better sensitivity
+    for (let i = 0; i < prev.length; i += 12) {
       const prevBrightness = (prev[i] + prev[i + 1] + prev[i + 2]) / 3;
       const currBrightness = (curr[i] + curr[i + 1] + curr[i + 2]) / 3;
       const diff = Math.abs(prevBrightness - currBrightness);
       
-      if (diff > 15) {
+      if (diff > 10) { // Lower threshold for better motion detection
         motionPixels++;
         totalDiff += diff;
         
-        // Estimate motion direction based on pixel position
         const pixelIndex = i / 4;
         const width = currentFrame.width;
         const x = pixelIndex % width;
@@ -112,13 +112,13 @@ export const useObjectDetection = () => {
     }
 
     const motionLevel = (totalDiff / (prev.length / 4)) * 100;
-    const isMotionDetected = motionLevel > 2;
+    const isMotionDetected = motionLevel > 1.5; // More sensitive detection
     
     let motionDirection = 'none';
     if (isMotionDetected) {
       if (Math.abs(horizontalMotion) > Math.abs(verticalMotion)) {
         motionDirection = horizontalMotion > 0 ? 'right' : 'left';
-      } else if (Math.abs(verticalMotion) > 10) {
+      } else if (Math.abs(verticalMotion) > 8) {
         motionDirection = verticalMotion > 0 ? 'down' : 'up';
       } else {
         motionDirection = 'general';
@@ -134,69 +134,107 @@ export const useObjectDetection = () => {
     };
   }, []);
 
-  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+  const analyzeObjectStability = useCallback((currentObjects: DetectedObject[]): DetectedObject[] => {
+    // Keep history of last 3 detections for stability
+    detectionHistoryRef.current.push(currentObjects);
+    if (detectionHistoryRef.current.length > 3) {
+      detectionHistoryRef.current.shift();
+    }
+
+    if (detectionHistoryRef.current.length < 2) {
+      return currentObjects;
+    }
+
+    // Filter objects that appear consistently across frames
+    const stableObjects: DetectedObject[] = [];
+    
+    currentObjects.forEach(obj => {
+      let consistentDetections = 1;
+      
+      detectionHistoryRef.current.slice(0, -1).forEach(historyFrame => {
+        const similarObject = historyFrame.find(histObj => 
+          histObj.name === obj.name && 
+          Math.abs(histObj.boundingBox.x - obj.boundingBox.x) < 0.1 &&
+          Math.abs(histObj.boundingBox.y - obj.boundingBox.y) < 0.1
+        );
+        if (similarObject) consistentDetections++;
+      });
+
+      // Include object if detected in at least 2 out of last 3 frames
+      if (consistentDetections >= 2) {
+        stableObjects.push(obj);
+      }
+    });
+
+    return stableObjects;
+  }, []);
+
+  const generateDetailedEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
     if (objects.length === 0) {
       return motion.isMotionDetected 
-        ? `Environment with ${motion.motionDirection} motion detected but no clear objects visible`
-        : 'Static environment with no clear objects detected';
+        ? `Dynamic environment with ${motion.motionDirection} motion but no distinct objects currently visible`
+        : 'Static environment - no clear objects or movement detected';
     }
 
     const objectTypes = objects.map(obj => obj.name);
     const uniqueObjects = [...new Set(objectTypes)];
-    const peopleCount = objectTypes.filter(type => type === 'person').length;
-    const hasVehicles = objectTypes.some(type => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(type));
-    const hasIndoorItems = objectTypes.some(type => ['chair', 'table', 'book', 'laptop', 'cup', 'bottle', 'phone', 'remote', 'mouse', 'keyboard'].includes(type));
-    const hasOutdoorItems = objectTypes.some(type => ['tree', 'plant', 'bench', 'traffic light', 'stop sign'].includes(type));
-    const hasSmallItems = objectTypes.some(type => ['cup', 'bottle', 'phone', 'book', 'remote', 'mouse', 'spoon', 'fork', 'knife'].includes(type));
+    const highConfidenceObjects = objects.filter(obj => obj.confidence > 0.4);
+    const smallObjects = objects.filter(obj => obj.boundingBox.width * obj.boundingBox.height < 0.02);
+    
+    // Categorize objects for better context
+    const people = objectTypes.filter(type => type === 'person').length;
+    const vehicles = objectTypes.filter(type => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(type));
+    const furniture = objectTypes.filter(type => ['chair', 'table', 'couch', 'bed'].includes(type));
+    const electronics = objectTypes.filter(type => ['laptop', 'phone', 'tv', 'computer', 'monitor'].includes(type));
+    const food = objectTypes.filter(type => ['cup', 'bottle', 'bowl', 'banana', 'apple', 'sandwich'].includes(type));
+    const books = objectTypes.filter(type => ['book', 'newspaper'].includes(type));
 
     let context = '';
     
-    // Environment type
-    if (hasIndoorItems && !hasOutdoorItems) {
-      context += 'Indoor environment ';
-    } else if (hasOutdoorItems && !hasIndoorItems) {
-      context += 'Outdoor environment ';
-    } else if (hasVehicles) {
-      context += 'Street or traffic environment ';
-    } else {
-      context += 'Mixed environment ';
+    // Activity inference
+    if (people > 0) {
+      context += `Social environment with ${people} ${people === 1 ? 'person' : 'people'} present. `;
     }
 
-    // People and activity
-    if (peopleCount > 0) {
-      context += `with ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'} `;
+    if (vehicles.length > 0) {
+      context += `Transportation area with ${vehicles.join(', ')} detected. `;
+    } else if (furniture.length > 0 && electronics.length > 0) {
+      context += `Indoor workspace or living area with furniture and technology. `;
+    } else if (books.length > 0) {
+      context += `Study or reading environment. `;
+    } else if (food.length > 0) {
+      context += `Dining or kitchen area with food items. `;
     }
 
-    // Small items context
-    if (hasSmallItems) {
-      context += 'including small handheld objects ';
+    // Object detail
+    if (highConfidenceObjects.length > 0) {
+      context += `Clear visibility of ${highConfidenceObjects.map(obj => obj.name).join(', ')} `;
+    }
+
+    if (smallObjects.length > 0) {
+      context += `including ${smallObjects.length} small detailed objects `;
     }
 
     // Motion context
     if (motion.isMotionDetected) {
-      context += `showing ${motion.motionDirection} movement `;
+      context += `with active ${motion.motionDirection} movement (${motion.motionLevel}% motion intensity). `;
     } else {
-      context += 'in a static scene ';
+      context += `in a stable, stationary scene. `;
     }
 
-    // Object summary
-    if (uniqueObjects.length > 3) {
-      context += `containing multiple objects including ${uniqueObjects.slice(0, 3).join(', ')} and others`;
-    } else {
-      context += `containing ${uniqueObjects.join(', ')}`;
-    }
+    // Confidence summary
+    const avgConfidence = objects.reduce((sum, obj) => sum + obj.confidence, 0) / objects.length;
+    context += `Detection confidence: ${Math.round(avgConfidence * 100)}%.`;
 
     return context;
   }, []);
 
   const detectObjects = useCallback(async (videoElement: HTMLVideoElement): Promise<ObjectDetectionResult | null> => {
     if (!objectDetectorRef.current || !isReady) {
-      console.log('Object detector not ready');
       return null;
     }
 
     if (!videoElement || videoElement.readyState < 2) {
-      console.log('Video element not ready');
       return null;
     }
 
@@ -216,7 +254,7 @@ export const useObjectDetection = () => {
       
       const motion = analyzeMotion(imageData);
       
-      const objects: DetectedObject[] = detections.detections.map(detection => ({
+      const rawObjects: DetectedObject[] = detections.detections.map(detection => ({
         name: detection.categories[0]?.categoryName || 'unknown object',
         confidence: detection.categories[0]?.score || 0,
         boundingBox: {
@@ -227,39 +265,37 @@ export const useObjectDetection = () => {
         }
       }));
 
-      // Lower confidence threshold for small objects
-      const validObjects = objects.filter(obj => obj.confidence > 0.2);
+      // Filter and stabilize objects
+      const validObjects = rawObjects.filter(obj => obj.confidence > 0.15);
+      const stableObjects = analyzeObjectStability(validObjects);
       
-      const environmentContext = generateEnvironmentContext(validObjects, motion);
+      const environmentContext = generateDetailedEnvironmentContext(stableObjects, motion);
       
-      // Enhanced description for small objects
+      // Enhanced real-time description
       let description = '';
-      if (validObjects.length === 0) {
+      if (stableObjects.length === 0) {
         description = motion.isMotionDetected 
-          ? `I detect ${motion.motionDirection} movement but no clear objects are visible`
-          : 'No clear objects detected in the current view';
-      } else if (validObjects.length === 1) {
-        const obj = validObjects[0];
-        const size = obj.boundingBox.width * obj.boundingBox.height < 0.01 ? 'small ' : '';
-        description = `I can see a ${size}${obj.name} with ${Math.round(obj.confidence * 100)}% confidence`;
+          ? `Movement detected moving ${motion.motionDirection} but no clear objects visible`
+          : 'No objects currently detected in view';
+      } else if (stableObjects.length === 1) {
+        const obj = stableObjects[0];
+        const size = obj.boundingBox.width * obj.boundingBox.height < 0.02 ? 'small ' : '';
+        description = `${size}${obj.name} detected with ${Math.round(obj.confidence * 100)}% confidence`;
         if (motion.isMotionDetected) {
-          description += ` with ${motion.motionDirection} motion detected`;
+          description += `, ${motion.motionDirection} movement active`;
         }
       } else {
-        const objectNames = validObjects.map(obj => obj.name);
+        const objectNames = stableObjects.map(obj => obj.name);
         const uniqueObjects = [...new Set(objectNames)];
-        const smallObjects = validObjects.filter(obj => obj.boundingBox.width * obj.boundingBox.height < 0.01);
-        description = `I can see ${validObjects.length} objects: ${uniqueObjects.join(', ')}`;
-        if (smallObjects.length > 0) {
-          description += ` including ${smallObjects.length} small items`;
-        }
+        description = `${stableObjects.length} objects detected: ${uniqueObjects.slice(0, 3).join(', ')}`;
+        if (uniqueObjects.length > 3) description += ` and ${uniqueObjects.length - 3} more`;
         if (motion.isMotionDetected) {
-          description += ` with ${motion.motionDirection} movement in the scene`;
+          description += `. ${motion.motionDirection} movement detected`;
         }
       }
 
       const result: ObjectDetectionResult = {
-        objects: validObjects,
+        objects: stableObjects,
         timestamp: new Date(),
         description,
         motion,
@@ -267,7 +303,6 @@ export const useObjectDetection = () => {
       };
 
       setLastDetection(result);
-      console.log('Enhanced detection result with small objects:', result);
       
       return result;
     } catch (err) {
@@ -275,7 +310,7 @@ export const useObjectDetection = () => {
       setError(err instanceof Error ? err.message : 'Detection failed');
       return null;
     }
-  }, [isReady, analyzeMotion, generateEnvironmentContext]);
+  }, [isReady, analyzeMotion, analyzeObjectStability, generateDetailedEnvironmentContext]);
 
   return {
     isLoading,

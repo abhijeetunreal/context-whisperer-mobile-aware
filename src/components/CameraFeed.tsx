@@ -29,9 +29,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const objectDetection = useObjectDetection();
   const textToSpeech = useTextToSpeech({ apiKey });
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const contextAnalysisIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSpokenObjectsRef = useRef<string | null>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+  const [isAnalyzingContext, setIsAnalyzingContext] = useState(false);
 
   // Update container dimensions when video loads
   useEffect(() => {
@@ -61,41 +63,21 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
   }, [isActive]);
 
-  // Handle continuous object detection every 2 seconds
+  // Real-time object detection (every 500ms for smooth tracking)
   useEffect(() => {
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting real-time object detection...');
+      console.log('Starting real-time object tracking...');
       
-      // Clear any existing interval
       if (detectionIntervalRef.current) {
         clearInterval(detectionIntervalRef.current);
       }
 
-      // Start new detection interval
+      // Real-time object detection for tracking
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
-          console.log('Processing frame for object detection...');
-          
-          // Run both context and object detection
-          contextDetection.processFrame(camera.videoRef.current);
-          const objectResult = await objectDetection.detectObjects(camera.videoRef.current);
-          
-          // Speak detected objects for blind users
-          if (voiceEnabled && objectResult && !textToSpeech.isSpeaking) {
-            const currentObjects = objectResult.description;
-            
-            // Only speak if objects changed to avoid repetitive announcements
-            if (lastSpokenObjectsRef.current !== currentObjects && objectResult.objects.length > 0) {
-              const spokenText = `${objectResult.description}. ${objectResult.objects.length > 1 ? 'Multiple objects detected' : 'Object detected'} in your view.`;
-              
-              textToSpeech.speak(spokenText);
-              lastSpokenObjectsRef.current = currentObjects;
-              
-              console.log('Speaking objects:', spokenText);
-            }
-          }
+          await objectDetection.detectObjects(camera.videoRef.current);
         }
-      }, 2000); // Every 2 seconds
+      }, 500); // 500ms for smooth real-time tracking
 
       return () => {
         if (detectionIntervalRef.current) {
@@ -103,14 +85,52 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           detectionIntervalRef.current = null;
         }
       };
-    } else {
-      // Stop detection when camera is not active or MediaPipe not ready
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-        detectionIntervalRef.current = null;
-      }
     }
-  }, [camera.isActive, objectDetection.isReady, contextDetection.processFrame, objectDetection.detectObjects, voiceEnabled, textToSpeech]);
+  }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
+
+  // Context analysis and voice descriptions (every 5 seconds)
+  useEffect(() => {
+    if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
+      console.log('Starting context analysis and voice descriptions...');
+      
+      if (contextAnalysisIntervalRef.current) {
+        clearInterval(contextAnalysisIntervalRef.current);
+      }
+
+      // Context analysis and voice announcements
+      contextAnalysisIntervalRef.current = setInterval(async () => {
+        if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
+          setIsAnalyzingContext(true);
+          
+          // Process context for suggestions
+          contextDetection.processFrame(camera.videoRef.current);
+          
+          // Get current detection for voice description
+          const objectResult = objectDetection.lastDetection;
+          
+          // Voice announcements for accessibility
+          if (voiceEnabled && objectResult && !textToSpeech.isSpeaking) {
+            const contextDescription = `Environment analysis: ${objectResult.environmentContext}`;
+            
+            if (lastSpokenObjectsRef.current !== contextDescription && objectResult.objects.length > 0) {
+              textToSpeech.speak(contextDescription);
+              lastSpokenObjectsRef.current = contextDescription;
+              console.log('Speaking context:', contextDescription);
+            }
+          }
+          
+          setIsAnalyzingContext(false);
+        }
+      }, 5000); // 5 seconds for context analysis
+
+      return () => {
+        if (contextAnalysisIntervalRef.current) {
+          clearInterval(contextAnalysisIntervalRef.current);
+          contextAnalysisIntervalRef.current = null;
+        }
+      };
+    }
+  }, [camera.isActive, objectDetection.isReady, objectDetection.lastDetection, contextDetection.processFrame, voiceEnabled, textToSpeech]);
 
   // Pass detected context to parent
   useEffect(() => {
@@ -159,16 +179,22 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
               Loading AI
             </Badge>
           )}
-          {contextDetection.isProcessing && (
-            <Badge variant="outline" className="flex items-center gap-1">
-              <Eye className="w-3 h-3 animate-pulse" />
-              Analyzing
+          {isAnalyzingContext && (
+            <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
+              <Eye className="w-3 h-3 animate-pulse text-blue-600" />
+              Analyzing Context
+            </Badge>
+          )}
+          {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
+            <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
+              <Activity className="w-3 h-3 text-green-600" />
+              {objectDetection.lastDetection.objects.length} Objects
             </Badge>
           )}
           {objectDetection.lastDetection?.motion.isMotionDetected && (
-            <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
-              <Activity className="w-3 h-3 animate-pulse text-blue-600" />
-              Motion
+            <Badge variant="outline" className="flex items-center gap-1 bg-orange-50">
+              <Activity className="w-3 h-3 animate-pulse text-orange-600" />
+              Motion: {objectDetection.lastDetection.motion.motionDirection}
             </Badge>
           )}
           {textToSpeech.isSpeaking && voiceEnabled && (
@@ -249,17 +275,22 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
           {camera.isActive && (
             <div className="absolute top-2 right-2 flex gap-2">
-              <Badge variant="default" className="bg-green-500 text-white">
-                Live
+              <Badge variant="default" className="bg-green-500 text-white text-xs">
+                Live Tracking
               </Badge>
               {objectDetection.isReady && (
-                <Badge variant="secondary" className="bg-blue-500 text-white">
-                  AI Ready
+                <Badge variant="secondary" className="bg-blue-500 text-white text-xs">
+                  AI Enhanced
+                </Badge>
+              )}
+              {isAnalyzingContext && (
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 text-xs">
+                  Context Analysis
                 </Badge>
               )}
               {voiceEnabled && (
-                <Badge variant="outline" className="bg-purple-50 text-purple-700">
-                  Voice On
+                <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
+                  Voice Active
                 </Badge>
               )}
             </div>
