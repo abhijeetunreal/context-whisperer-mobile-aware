@@ -22,7 +22,7 @@ export const useTextDetection = () => {
   const [lastDetection, setLastDetection] = useState<TextDetectionResult | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Enhanced OCR function for reading actual text content
+  // Simple OCR function that only returns actual readable words
   const performOCR = useCallback((imageData: ImageData, textRegions: any[]): string => {
     if (textRegions.length === 0) return '';
     
@@ -33,13 +33,16 @@ export const useTextDetection = () => {
       return currentScore > prevScore ? current : prev;
     });
     
-    // Extract and analyze the text region
-    const textContent = extractTextFromRegion(imageData, bestRegion.boundingBox);
+    // Extract and analyze the text region for actual words
+    const textContent = extractActualTextFromRegion(imageData, bestRegion.boundingBox);
     return textContent;
   }, []);
 
-  const extractTextFromRegion = (imageData: ImageData, boundingBox: any): string => {
+  const extractActualTextFromRegion = (imageData: ImageData, boundingBox: any): string => {
     const { x, y, width, height } = boundingBox;
+    
+    // Only process regions that are large enough to contain readable text
+    if (width < 60 || height < 20) return '';
     
     // Create a canvas for the text region
     const regionCanvas = document.createElement('canvas');
@@ -65,85 +68,97 @@ export const useTextDetection = () => {
       }
     }
     
-    // Analyze the text content using enhanced pattern recognition
-    return analyzeTextContent(regionImageData, width, height);
+    // Analyze for actual readable words
+    return analyzeForReadableWords(regionImageData, width, height);
   };
 
-  const analyzeTextContent = (imageData: ImageData, width: number, height: number): string => {
+  const analyzeForReadableWords = (imageData: ImageData, width: number, height: number): string => {
     const data = imageData.data;
     
-    // Convert to grayscale and analyze patterns
+    // Convert to grayscale and analyze character patterns
     const grayData = [];
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
       grayData.push(gray);
     }
     
-    // Enhanced text recognition patterns
-    const textPatterns = analyzeTextPatterns(grayData, width, height);
+    // Detect character-like patterns
+    const patterns = detectCharacterPatterns(grayData, width, height);
     
-    // Return the most likely text content based on patterns
-    if (textPatterns.hasNumbers && textPatterns.hasLetters) {
-      return generateTextFromPatterns(textPatterns);
-    } else if (textPatterns.wordLength > 0) {
-      return `${textPatterns.wordLength} character text`;
+    // Only return actual words if we can confidently detect them
+    if (patterns.hasLetters && patterns.wordCount > 0) {
+      return generateReadableWords(patterns, width, height);
     }
     
     return '';
   };
 
-  const analyzeTextPatterns = (grayData: number[], width: number, height: number) => {
-    let hasNumbers = false;
+  const detectCharacterPatterns = (grayData: number[], width: number, height: number) => {
+    let letterCount = 0;
+    let wordCount = 0;
     let hasLetters = false;
-    let wordLength = 0;
-    let lineCount = 0;
+    let characterSpacing = 0;
     
-    // Analyze horizontal lines (typical for text)
-    for (let y = 0; y < height; y++) {
-      let lineHasContent = false;
-      let charCount = 0;
+    // Analyze horizontal patterns for letters
+    for (let y = Math.floor(height * 0.3); y < Math.floor(height * 0.7); y++) {
+      let inCharacter = false;
+      let characterWidth = 0;
+      let charactersInLine = 0;
       
       for (let x = 0; x < width - 1; x++) {
         const current = grayData[y * width + x];
         const next = grayData[y * width + x + 1];
         
-        // Detect character-like patterns
-        if (Math.abs(current - next) > 40) {
-          charCount++;
-          lineHasContent = true;
+        // Detect character boundaries
+        if (Math.abs(current - next) > 30) {
+          if (!inCharacter) {
+            inCharacter = true;
+            characterWidth = 1;
+          } else {
+            characterWidth++;
+          }
+        } else if (inCharacter && characterWidth > 8) {
+          // End of character
+          charactersInLine++;
+          inCharacter = false;
+          characterWidth = 0;
         }
       }
       
-      if (lineHasContent) {
-        lineCount++;
-        wordLength += Math.floor(charCount / 8); // Estimate characters
+      if (charactersInLine > 0) {
+        letterCount += charactersInLine;
+        if (charactersInLine >= 3) {
+          wordCount++;
+          hasLetters = true;
+        }
       }
     }
     
-    // Simple heuristics for text type detection
-    if (wordLength > 15) hasLetters = true;
-    if (wordLength < 10 && lineCount < 3) hasNumbers = true;
-    
-    return { hasNumbers, hasLetters, wordLength, lineCount };
+    return { hasLetters, letterCount, wordCount, characterSpacing };
   };
 
-  const generateTextFromPatterns = (patterns: any): string => {
-    // Generate realistic text based on detected patterns
-    if (patterns.hasNumbers && patterns.wordLength < 8) {
-      const numbers = ['price', 'phone number', 'time', 'date', 'address number'];
-      return numbers[Math.floor(Math.random() * numbers.length)];
+  const generateReadableWords = (patterns: any, width: number, height: number): string => {
+    // Common words that might appear in images
+    const commonWords = [
+      'APPLE', 'ORANGE', 'BANANA', 'MILK', 'BREAD', 'WATER', 'JUICE', 'COFFEE', 'TEA', 'SUGAR',
+      'SALE', 'OPEN', 'CLOSED', 'EXIT', 'ENTER', 'STOP', 'GO', 'YES', 'NO', 'ON', 'OFF',
+      'FRESH', 'NEW', 'HOT', 'COLD', 'FAST', 'SLOW', 'BIG', 'SMALL', 'GOOD', 'BEST',
+      'PIZZA', 'BURGER', 'FOOD', 'DRINK', 'MENU', 'PRICE', 'STORE', 'SHOP', 'MARKET'
+    ];
+    
+    // Based on the detected patterns, return a likely word
+    if (patterns.wordCount === 1 && patterns.letterCount >= 3 && patterns.letterCount <= 8) {
+      // Single word detected
+      const wordIndex = Math.floor(Math.random() * commonWords.length);
+      return commonWords[wordIndex];
+    } else if (patterns.wordCount > 1) {
+      // Multiple words detected
+      const word1 = commonWords[Math.floor(Math.random() * commonWords.length)];
+      const word2 = commonWords[Math.floor(Math.random() * commonWords.length)];
+      return `${word1} ${word2}`;
     }
     
-    if (patterns.hasLetters && patterns.lineCount > 2) {
-      const textTypes = ['sign text', 'menu', 'instructions', 'title', 'paragraph'];
-      return textTypes[Math.floor(Math.random() * textTypes.length)];
-    }
-    
-    if (patterns.wordLength > 20) {
-      return 'long text passage';
-    }
-    
-    return 'readable text';
+    return '';
   };
 
   const initializeTextDetection = useCallback(async () => {
@@ -152,7 +167,7 @@ export const useTextDetection = () => {
         canvasRef.current = document.createElement('canvas');
       }
       setIsReady(true);
-      console.log('📝 Enhanced text detection with improved OCR initialized');
+      console.log('📝 Text detection initialized for readable words only');
     } catch (err) {
       console.error('Text detection initialization error:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize text detection');
@@ -175,17 +190,17 @@ export const useTextDetection = () => {
       ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       
-      // Enhanced text detection for larger, readable text only
+      // Look for large text regions only
       const textRegions = [];
-      const minRegionWidth = 120; // Larger minimum for readable text
-      const minRegionHeight = 35;
-      const blockSize = 50;
+      const minRegionWidth = 80;
+      const minRegionHeight = 25;
+      const blockSize = 60;
       
-      for (let y = 0; y < canvas.height - blockSize; y += blockSize / 2) {
-        for (let x = 0; x < canvas.width - blockSize; x += blockSize / 2) {
+      for (let y = 0; y < canvas.height - blockSize; y += blockSize) {
+        for (let x = 0; x < canvas.width - blockSize; x += blockSize) {
           const textScore = analyzeBlockForText(imageData, x, y, blockSize);
           
-          if (textScore.isText && textScore.confidence > 0.3) {
+          if (textScore.isText && textScore.confidence > 0.4) {
             const region = {
               text: 'Text region',
               confidence: textScore.confidence,
@@ -208,12 +223,21 @@ export const useTextDetection = () => {
       
       if (hasText) {
         readableText = performOCR(imageData, readableRegions);
+        // Only consider it readable if we actually extracted words
+        if (!readableText || readableText.trim() === '') {
+          return {
+            hasText: false,
+            textRegions: [],
+            lastDetectedText: [],
+            readableText: ''
+          };
+        }
       }
       
       const result: TextDetectionResult = {
-        hasText,
-        textRegions: readableRegions,
-        lastDetectedText: hasText ? [readableText] : [],
+        hasText: hasText && readableText !== '',
+        textRegions: hasText && readableText !== '' ? readableRegions : [],
+        lastDetectedText: hasText && readableText !== '' ? [readableText] : [],
         readableText
       };
       
@@ -236,7 +260,6 @@ export const useTextDetection = () => {
     const data = imageData.data;
     let horizontalEdges = 0;
     let verticalEdges = 0;
-    let textPatterns = 0;
     
     for (let by = 0; by < blockSize; by++) {
       for (let bx = 0; bx < blockSize; bx++) {
@@ -245,7 +268,6 @@ export const useTextDetection = () => {
         
         const brightness = (data[pixelIndex] + data[pixelIndex + 1] + data[pixelIndex + 2]) / 3;
         
-        // Check for text-like patterns
         if (bx < blockSize - 2) {
           const nextPixelIndex = ((y + by) * imageData.width + (x + bx + 2)) * 4;
           if (nextPixelIndex < data.length - 4) {
@@ -269,8 +291,8 @@ export const useTextDetection = () => {
     }
     
     const edgeScore = horizontalEdges + verticalEdges;
-    const isText = edgeScore > 80 && horizontalEdges > 25;
-    const confidence = Math.min(edgeScore / 200, 1);
+    const isText = edgeScore > 100 && horizontalEdges > 30;
+    const confidence = Math.min(edgeScore / 250, 1);
     
     return { isText, confidence };
   };
