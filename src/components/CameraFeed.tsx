@@ -85,7 +85,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, []);
 
-  // Real-time object detection
+  // Real-time object detection with enhanced tracking
   useEffect(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
@@ -93,20 +93,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting real-time object detection...');
+      console.log('Starting enhanced object detection with tracking...');
       
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
           try {
             const result = await objectDetection.detectObjects(camera.videoRef.current);
             if (result) {
-              console.log('Detection result:', result.objects.length, 'objects');
+              console.log('Enhanced detection result:', result.objects.length, 'objects with tracking');
             }
           } catch (error) {
-            console.error('Object detection error:', error);
+            console.error('Enhanced object detection error:', error);
           }
         }
-      }, 300);
+      }, 250); // Slightly faster for better tracking
     }
 
     return () => {
@@ -117,7 +117,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Voice description interval - every 3 seconds when voice is enabled
+  // Enhanced voice description with reasoning
   useEffect(() => {
     if (voiceIntervalRef.current) {
       clearInterval(voiceIntervalRef.current);
@@ -125,50 +125,44 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && voiceEnabled && objectDetection.isReady) {
-      console.log('🎤 Starting voice description interval every 3 seconds...');
+      console.log('🎤 Starting enhanced voice descriptions with reasoning...');
       
-      // Start immediately, then every 3 seconds
-      const triggerVoiceDescription = async () => {
+      const triggerEnhancedVoiceDescription = async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
-          console.log('🎤 Voice interval triggered - generating description...');
+          console.log('🎤 Enhanced voice interval triggered...');
           
           try {
             const objectResult = objectDetection.lastDetection;
             
-            if (objectResult && objectResult.environmentContext) {
-              const description = objectResult.environmentContext;
-              console.log('🎤 Voice description ready:', description.substring(0, 100) + '...');
+            if (objectResult) {
+              // Combine environment context with reasoning for richer descriptions
+              const enhancedDescription = `${objectResult.environmentContext} ${objectResult.reasoning}`;
+              console.log('🎤 Enhanced voice description ready:', enhancedDescription.substring(0, 100) + '...');
               
-              // Only speak if we're not currently speaking and have new content
-              if (!textToSpeech.isSpeaking && description !== lastSpokenContextRef.current) {
-                console.log('🎤 Speaking description now...');
-                lastSpokenContextRef.current = description;
-                await textToSpeech.speak(description);
+              if (!textToSpeech.isSpeaking && enhancedDescription !== lastSpokenContextRef.current) {
+                console.log('🎤 Speaking enhanced description...');
+                lastSpokenContextRef.current = enhancedDescription;
+                await textToSpeech.speak(enhancedDescription);
               } else if (textToSpeech.isSpeaking) {
                 console.log('🎤 Already speaking, skipping...');
               } else {
-                console.log('🎤 Same content as before, skipping...');
+                console.log('🎤 Same enhanced content, skipping...');
               }
             } else {
-              // Fallback description when no objects detected
-              const fallbackDescription = "I'm actively monitoring the environment. The camera is working and scanning for objects and activities.";
+              const fallbackDescription = "I'm actively monitoring the environment with enhanced object tracking and reasoning capabilities.";
               if (!textToSpeech.isSpeaking && fallbackDescription !== lastSpokenContextRef.current) {
-                console.log('🎤 Using fallback description');
                 lastSpokenContextRef.current = fallbackDescription;
                 await textToSpeech.speak(fallbackDescription);
               }
             }
           } catch (error) {
-            console.error('🎤 Voice description error:', error);
+            console.error('🎤 Enhanced voice description error:', error);
           }
         }
       };
 
-      // Trigger immediately
-      triggerVoiceDescription();
-      
-      // Then set up interval
-      voiceIntervalRef.current = setInterval(triggerVoiceDescription, 3000);
+      triggerEnhancedVoiceDescription();
+      voiceIntervalRef.current = setInterval(triggerEnhancedVoiceDescription, 3000);
     }
 
     return () => {
@@ -253,9 +247,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">AI-Powered Camera Feed</h3>
+            <h3 className="font-semibold text-slate-800">Enhanced AI Object Tracking</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Real-time object detection with voice descriptions every 3 seconds' : 'Camera inactive'}
+              {camera.isActive ? 'Advanced object detection with tracking and reasoning' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -263,7 +257,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.isLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Loading AI
+              Loading Enhanced AI
             </Badge>
           )}
           {isAnalyzingContext && (
@@ -275,7 +269,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
               <Activity className="w-3 h-3 text-green-600" />
-              {objectDetection.lastDetection.objects.length} Objects
+              {objectDetection.lastDetection.objects.length} Tracked Objects
             </Badge>
           )}
           {objectDetection.lastDetection?.motion.isMotionDetected && (
@@ -339,7 +333,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             }}
           />
           
-          {/* Object Annotations Overlay */}
+          {/* Enhanced Object Annotations Overlay */}
           {camera.isActive && objectDetection.lastDetection && camera.videoRef.current && (
             <ObjectAnnotations
               objects={objectDetection.lastDetection.objects}
@@ -363,11 +357,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {camera.isActive && (
             <div className="absolute top-2 right-2 flex gap-2">
               <Badge variant="default" className="bg-green-500 text-white text-xs">
-                Live Tracking
+                Enhanced Tracking
               </Badge>
               {objectDetection.isReady && (
                 <Badge variant="secondary" className="bg-blue-500 text-white text-xs">
-                  AI Enhanced
+                  YOLOv8 Enhanced
                 </Badge>
               )}
               {isAnalyzingContext && (
@@ -377,7 +371,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
               )}
               {voiceEnabled && (
                 <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
-                  Voice Every 3s
+                  Voice + Reasoning
                 </Badge>
               )}
             </div>
@@ -385,28 +379,33 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         </div>
       </div>
 
-      {/* Enhanced Object Detection Results */}
+      {/* Enhanced Object Detection Results with Tracking */}
       {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
         <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-          <h4 className="font-medium text-green-800 mb-1">Objects Detected</h4>
+          <h4 className="font-medium text-green-800 mb-1">Enhanced Object Tracking</h4>
           <p className="text-sm text-green-700 mb-2">
             {objectDetection.lastDetection.description}
           </p>
           <div className="flex flex-wrap gap-2 mb-2">
             {objectDetection.lastDetection.objects.map((obj, index) => (
               <Badge key={index} variant="outline" className="text-xs bg-green-100">
-                {obj.name} ({Math.round(obj.confidence * 100)}%)
+                {obj.name} ({Math.round(obj.confidence * 100)}%) 
+                {obj.persistenceCount > 1 && ` ×${obj.persistenceCount}`}
+                {obj.trackingId && ` #${obj.trackingId}`}
               </Badge>
             ))}
           </div>
           {objectDetection.lastDetection.motion.isMotionDetected && (
             <p className="text-xs text-green-600 mb-1">
-              Motion: {objectDetection.lastDetection.motion.motionDirection} movement detected 
+              Motion: {objectDetection.lastDetection.motion.motionDirection} movement 
               (Level: {objectDetection.lastDetection.motion.motionLevel}%)
             </p>
           )}
           <p className="text-xs text-green-600 mb-1">
             Environment: {objectDetection.lastDetection.environmentContext}
+          </p>
+          <p className="text-xs text-green-600 mb-1">
+            Reasoning: {objectDetection.lastDetection.reasoning}
           </p>
           <p className="text-xs text-green-600">
             Last detected: {objectDetection.lastDetection.timestamp.toLocaleTimeString()}

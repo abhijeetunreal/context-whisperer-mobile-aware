@@ -3,6 +3,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 
 interface DetectedObject {
+  id: string;
   name: string;
   confidence: number;
   boundingBox: {
@@ -11,6 +12,9 @@ interface DetectedObject {
     width: number;
     height: number;
   };
+  trackingId?: number;
+  velocity?: { x: number; y: number };
+  persistenceCount: number;
 }
 
 interface ObjectAnnotationsProps {
@@ -42,11 +46,31 @@ const ObjectAnnotations: React.FC<ObjectAnnotationsProps> = ({
         const width = obj.boundingBox.width * scaleX;
         const height = obj.boundingBox.height * scaleY;
 
+        // Color coding based on persistence and tracking
+        const isTracked = obj.persistenceCount > 2;
+        const isMoving = obj.velocity && (Math.abs(obj.velocity.x) > 3 || Math.abs(obj.velocity.y) > 3);
+        
+        let borderColor = 'border-green-400';
+        let bgColor = 'bg-green-400/10';
+        let badgeColor = 'bg-green-500';
+        
+        if (isTracked) {
+          borderColor = 'border-blue-400';
+          bgColor = 'bg-blue-400/10';
+          badgeColor = 'bg-blue-500';
+        }
+        
+        if (isMoving) {
+          borderColor = 'border-orange-400';
+          bgColor = 'bg-orange-400/10';
+          badgeColor = 'bg-orange-500';
+        }
+
         return (
-          <div key={index}>
-            {/* Bounding box */}
+          <div key={obj.id || index}>
+            {/* Enhanced bounding box with tracking indicators */}
             <div
-              className="absolute border-2 border-green-400 bg-green-400/10 rounded"
+              className={`absolute border-2 ${borderColor} ${bgColor} rounded`}
               style={{
                 left: `${x}px`,
                 top: `${y}px`,
@@ -55,7 +79,22 @@ const ObjectAnnotations: React.FC<ObjectAnnotationsProps> = ({
               }}
             />
             
-            {/* Label */}
+            {/* Tracking ID indicator */}
+            {obj.trackingId && (
+              <div
+                className="absolute"
+                style={{
+                  left: `${x}px`,
+                  top: `${y}px`,
+                }}
+              >
+                <div className={`w-6 h-6 rounded-full ${badgeColor} text-white text-xs flex items-center justify-center font-bold`}>
+                  {obj.trackingId}
+                </div>
+              </div>
+            )}
+            
+            {/* Enhanced label with tracking info */}
             <div
               className="absolute"
               style={{
@@ -65,11 +104,31 @@ const ObjectAnnotations: React.FC<ObjectAnnotationsProps> = ({
             >
               <Badge 
                 variant="default" 
-                className="bg-green-500 text-white text-xs font-medium shadow-lg"
+                className={`${badgeColor} text-white text-xs font-medium shadow-lg`}
               >
                 {obj.name} {Math.round(obj.confidence * 100)}%
+                {obj.persistenceCount > 1 && ` ×${obj.persistenceCount}`}
+                {isMoving && ' 🔄'}
               </Badge>
             </div>
+            
+            {/* Velocity indicator for moving objects */}
+            {isMoving && obj.velocity && (
+              <div
+                className="absolute"
+                style={{
+                  left: `${x + width/2}px`,
+                  top: `${y + height/2}px`,
+                }}
+              >
+                <div 
+                  className="w-6 h-1 bg-red-500 transform origin-left"
+                  style={{
+                    transform: `rotate(${Math.atan2(obj.velocity.y, obj.velocity.x) * 180 / Math.PI}deg) scaleX(${Math.min(Math.sqrt(obj.velocity.x * obj.velocity.x + obj.velocity.y * obj.velocity.y) / 10, 3)})`
+                  }}
+                />
+              </div>
+            )}
           </div>
         );
       })}

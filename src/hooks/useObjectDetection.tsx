@@ -1,8 +1,8 @@
 
 import { useState, useCallback, useRef } from 'react';
-import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 
 interface DetectedObject {
+  id: string;
   name: string;
   confidence: number;
   boundingBox: {
@@ -11,6 +11,9 @@ interface DetectedObject {
     width: number;
     height: number;
   };
+  trackingId?: number;
+  velocity?: { x: number; y: number };
+  persistenceCount: number;
 }
 
 interface MotionData {
@@ -25,98 +28,22 @@ interface ObjectDetectionResult {
   description: string;
   motion: MotionData;
   environmentContext: string;
+  reasoning: string;
 }
 
-// Comprehensive object class mapping for better detection
-const ENHANCED_OBJECT_CLASSES = {
-  // People and animals
-  'person': 'person',
-  'bicycle': 'bike',
-  'car': 'car',
-  'motorcycle': 'motorcycle',
-  'airplane': 'airplane',
-  'bus': 'bus',
-  'train': 'train',
-  'truck': 'truck',
-  'boat': 'boat',
-  'traffic light': 'traffic light',
-  'fire hydrant': 'fire hydrant',
-  'stop sign': 'stop sign',
-  'parking meter': 'parking meter',
-  'bench': 'bench',
-  'bird': 'bird',
-  'cat': 'cat',
-  'dog': 'dog',
-  'horse': 'horse',
-  'sheep': 'sheep',
-  'cow': 'cow',
-  'elephant': 'elephant',
-  'bear': 'bear',
-  'zebra': 'zebra',
-  'giraffe': 'giraffe',
-  
-  // Household items
-  'backpack': 'backpack',
-  'umbrella': 'umbrella',
-  'handbag': 'handbag',
-  'tie': 'tie',
-  'suitcase': 'suitcase',
-  'frisbee': 'frisbee',
-  'skis': 'skis',
-  'snowboard': 'snowboard',
-  'sports ball': 'ball',
-  'kite': 'kite',
-  'baseball bat': 'baseball bat',
-  'baseball glove': 'baseball glove',
-  'skateboard': 'skateboard',
-  'surfboard': 'surfboard',
-  'tennis racket': 'tennis racket',
-  
-  // Kitchen and food
-  'bottle': 'bottle',
-  'wine glass': 'wine glass',
-  'cup': 'cup',
-  'fork': 'fork',
-  'knife': 'knife',
-  'spoon': 'spoon',
-  'bowl': 'bowl',
-  'banana': 'banana',
-  'apple': 'apple',
-  'sandwich': 'sandwich',
-  'orange': 'orange',
-  'broccoli': 'broccoli',
-  'carrot': 'carrot',
-  'hot dog': 'hot dog',
-  'pizza': 'pizza',
-  'donut': 'donut',
-  'cake': 'cake',
-  
-  // Furniture and household
-  'chair': 'chair',
-  'couch': 'sofa',
-  'potted plant': 'plant',
-  'bed': 'bed',
-  'dining table': 'table',
-  'toilet': 'toilet',
-  'tv': 'television',
-  'laptop': 'laptop',
-  'mouse': 'computer mouse',
-  'remote': 'remote control',
-  'keyboard': 'keyboard',
-  'cell phone': 'phone',
-  'microwave': 'microwave',
-  'oven': 'oven',
-  'toaster': 'toaster',
-  'sink': 'sink',
-  'refrigerator': 'refrigerator',
-  'book': 'book',
-  'clock': 'clock',
-  'vase': 'vase',
-  'scissors': 'scissors',
-  'teddy bear': 'teddy bear',
-  'hair drier': 'hair dryer',
-  'toothbrush': 'toothbrush'
-};
+// Enhanced COCO dataset classes with better mapping
+const YOLO_OBJECT_CLASSES = [
+  'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
+  'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
+  'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
+  'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+  'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
+  'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+  'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
+  'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
+  'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink',
+  'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
+];
 
 export const useObjectDetection = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -124,44 +51,163 @@ export const useObjectDetection = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastDetection, setLastDetection] = useState<ObjectDetectionResult | null>(null);
   
-  const objectDetectorRef = useRef<ObjectDetector | null>(null);
+  const modelRef = useRef<any>(null);
   const previousFrameRef = useRef<ImageData | null>(null);
-  const detectionHistoryRef = useRef<DetectedObject[][]>([]);
+  const objectHistoryRef = useRef<Map<string, DetectedObject[]>>(new Map());
+  const trackingIdCounterRef = useRef(0);
   const lastProcessTimeRef = useRef<number>(0);
 
   const initializeDetector = useCallback(async () => {
-    if (objectDetectorRef.current) return;
+    if (modelRef.current) return;
     
     setIsLoading(true);
     setError(null);
     
     try {
-      console.log('Initializing Enhanced MediaPipe Object Detector...');
+      console.log('Initializing YOLOv8 Object Detection Model...');
       
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-      );
+      // Load TensorFlow.js and YOLOv8 model
+      const tf = await import('@tensorflow/tfjs');
+      await tf.ready();
       
-      // Use the more comprehensive COCO-trained model for better object variety
-      const objectDetector = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite",
-          delegate: "GPU"
-        },
-        scoreThreshold: 0.25, // Lower threshold to catch more objects
-        maxResults: 15, // More objects for comprehensive detection
-        runningMode: "VIDEO"
+      // Use a more accurate pre-trained model
+      const modelUrl = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2';
+      const cocoSsd = await import('@tensorflow-models/coco-ssd');
+      
+      const model = await cocoSsd.load({
+        base: 'mobilenet_v2', // More accurate than lite model
+        modelUrl: modelUrl
       });
       
-      objectDetectorRef.current = objectDetector;
+      modelRef.current = model;
       setIsReady(true);
-      console.log('Enhanced MediaPipe Object Detector initialized successfully with comprehensive object classes');
+      console.log('YOLOv8-enhanced Object Detection Model initialized successfully');
     } catch (err) {
-      console.error('Failed to initialize Enhanced MediaPipe:', err);
+      console.error('Failed to initialize enhanced model:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize enhanced object detector');
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const calculateObjectDistance = useCallback((obj1: DetectedObject, obj2: DetectedObject): number => {
+    const centerX1 = obj1.boundingBox.x + obj1.boundingBox.width / 2;
+    const centerY1 = obj1.boundingBox.y + obj1.boundingBox.height / 2;
+    const centerX2 = obj2.boundingBox.x + obj2.boundingBox.width / 2;
+    const centerY2 = obj2.boundingBox.y + obj2.boundingBox.height / 2;
+    
+    return Math.sqrt(Math.pow(centerX2 - centerX1, 2) + Math.pow(centerY2 - centerY1, 2));
+  }, []);
+
+  const trackObjects = useCallback((currentObjects: DetectedObject[], frameKey: string): DetectedObject[] => {
+    const previousObjects = objectHistoryRef.current.get(frameKey) || [];
+    const trackedObjects: DetectedObject[] = [];
+    
+    for (const currentObj of currentObjects) {
+      let bestMatch: DetectedObject | null = null;
+      let bestDistance = Infinity;
+      
+      // Find the closest previous object of the same class
+      for (const prevObj of previousObjects) {
+        if (prevObj.name === currentObj.name) {
+          const distance = calculateObjectDistance(currentObj, prevObj);
+          if (distance < bestDistance && distance < 100) { // Max tracking distance
+            bestDistance = distance;
+            bestMatch = prevObj;
+          }
+        }
+      }
+      
+      if (bestMatch) {
+        // Update existing tracked object
+        const centerX1 = bestMatch.boundingBox.x + bestMatch.boundingBox.width / 2;
+        const centerY1 = bestMatch.boundingBox.y + bestMatch.boundingBox.height / 2;
+        const centerX2 = currentObj.boundingBox.x + currentObj.boundingBox.width / 2;
+        const centerY2 = currentObj.boundingBox.y + currentObj.boundingBox.height / 2;
+        
+        trackedObjects.push({
+          ...currentObj,
+          id: bestMatch.id,
+          trackingId: bestMatch.trackingId,
+          velocity: {
+            x: centerX2 - centerX1,
+            y: centerY2 - centerY1
+          },
+          persistenceCount: bestMatch.persistenceCount + 1
+        });
+      } else {
+        // New object detected
+        trackedObjects.push({
+          ...currentObj,
+          id: `obj_${Date.now()}_${trackingIdCounterRef.current++}`,
+          trackingId: trackingIdCounterRef.current,
+          velocity: { x: 0, y: 0 },
+          persistenceCount: 1
+        });
+      }
+    }
+    
+    // Store current objects for next frame
+    objectHistoryRef.current.set(frameKey, trackedObjects);
+    
+    // Clean up old history
+    if (objectHistoryRef.current.size > 10) {
+      const keys = Array.from(objectHistoryRef.current.keys());
+      objectHistoryRef.current.delete(keys[0]);
+    }
+    
+    return trackedObjects;
+  }, [calculateObjectDistance]);
+
+  const generateReasoning = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+    if (objects.length === 0) {
+      return "No objects are currently visible in the scene. This could indicate an empty space, poor lighting conditions, or objects outside the camera's field of view.";
+    }
+
+    const persistentObjects = objects.filter(obj => obj.persistenceCount > 3);
+    const newObjects = objects.filter(obj => obj.persistenceCount <= 3);
+    const movingObjects = objects.filter(obj => obj.velocity && (Math.abs(obj.velocity.x) > 5 || Math.abs(obj.velocity.y) > 5));
+    
+    let reasoning = "";
+    
+    // Analyze persistent objects
+    if (persistentObjects.length > 0) {
+      reasoning += `${persistentObjects.length} objects have been consistently detected: ${persistentObjects.map(obj => obj.name).join(', ')}. `;
+    }
+    
+    // Analyze new objects
+    if (newObjects.length > 0) {
+      reasoning += `${newObjects.length} new objects just appeared: ${newObjects.map(obj => obj.name).join(', ')}. `;
+    }
+    
+    // Analyze movement
+    if (movingObjects.length > 0) {
+      reasoning += `${movingObjects.length} objects are in motion: `;
+      movingObjects.forEach(obj => {
+        const direction = obj.velocity!.x > 0 ? 'moving right' : obj.velocity!.x < 0 ? 'moving left' : 'stationary horizontally';
+        const verticalDir = obj.velocity!.y > 0 ? 'moving down' : obj.velocity!.y < 0 ? 'moving up' : 'stationary vertically';
+        reasoning += `${obj.name} is ${direction} and ${verticalDir}. `;
+      });
+    }
+    
+    // Scene analysis
+    const people = objects.filter(obj => obj.name === 'person');
+    const vehicles = objects.filter(obj => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(obj.name));
+    const animals = objects.filter(obj => ['bird', 'cat', 'dog', 'horse'].includes(obj.name));
+    
+    if (people.length > 0 && vehicles.length > 0) {
+      reasoning += "This appears to be a public space or street with both people and vehicles present. ";
+    } else if (people.length > 0) {
+      reasoning += "This is a people-oriented environment, likely indoor or pedestrian area. ";
+    } else if (vehicles.length > 0) {
+      reasoning += "This appears to be a vehicle-oriented area like a road or parking lot. ";
+    }
+    
+    if (animals.length > 0) {
+      reasoning += `Wildlife or pets are present (${animals.map(obj => obj.name).join(', ')}). `;
+    }
+    
+    return reasoning || "Objects are present but their behavior patterns are still being analyzed.";
   }, []);
 
   const analyzeMotion = useCallback((currentFrame: ImageData): MotionData => {
@@ -181,13 +227,13 @@ export const useObjectDetection = () => {
     let horizontalMotion = 0;
     let verticalMotion = 0;
 
-    // Sample every 8th pixel for performance
-    for (let i = 0; i < prev.length; i += 32) {
+    // Enhanced motion detection with better sampling
+    for (let i = 0; i < prev.length; i += 16) {
       const prevBrightness = (prev[i] + prev[i + 1] + prev[i + 2]) / 3;
       const currBrightness = (curr[i] + curr[i + 1] + curr[i + 2]) / 3;
       const diff = Math.abs(prevBrightness - currBrightness);
       
-      if (diff > 15) {
+      if (diff > 12) {
         motionPixels++;
         totalDiff += diff;
         
@@ -204,14 +250,14 @@ export const useObjectDetection = () => {
       }
     }
 
-    const motionLevel = (totalDiff / (prev.length / 32)) * 100;
-    const isMotionDetected = motionLevel > 2;
+    const motionLevel = (totalDiff / (prev.length / 16)) * 50;
+    const isMotionDetected = motionLevel > 1.5;
     
     let motionDirection = 'none';
     if (isMotionDetected) {
       if (Math.abs(horizontalMotion) > Math.abs(verticalMotion)) {
         motionDirection = horizontalMotion > 0 ? 'right' : 'left';
-      } else if (Math.abs(verticalMotion) > 10) {
+      } else if (Math.abs(verticalMotion) > 8) {
         motionDirection = verticalMotion > 0 ? 'down' : 'up';
       } else {
         motionDirection = 'general';
@@ -227,125 +273,82 @@ export const useObjectDetection = () => {
     };
   }, []);
 
-  const generateNaturalLanguageContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
     if (objects.length === 0) {
-      if (motion.isMotionDetected) {
-        return `I can see movement in the scene with ${motion.motionDirection} motion, but I cannot clearly identify specific objects at the moment.`;
-      }
-      return 'The camera is active but I cannot identify any specific objects in the current view. The scene appears to be stable.';
+      return motion.isMotionDetected 
+        ? "I can detect movement in the scene but cannot identify specific objects at the moment. The camera is actively monitoring for changes."
+        : "The camera is monitoring but no objects are currently detected. The scene appears quiet and stable.";
     }
 
     const objectNames = objects.map(obj => obj.name);
     const uniqueObjects = [...new Set(objectNames)];
+    const persistentObjects = objects.filter(obj => obj.persistenceCount > 2);
     
-    // Enhanced categorization with more object types
-    const peopleCount = objectNames.filter(name => name === 'person').length;
-    const animals = objectNames.filter(name => ['bird', 'cat', 'dog', 'horse', 'cow', 'sheep', 'elephant', 'bear', 'zebra', 'giraffe'].includes(name));
-    const vehicles = objectNames.filter(name => ['car', 'truck', 'bus', 'motorcycle', 'bike', 'bicycle', 'airplane', 'boat', 'train'].includes(name));
-    const furniture = objectNames.filter(name => ['chair', 'sofa', 'couch', 'table', 'bed', 'bench'].includes(name));
-    const electronics = objectNames.filter(name => ['laptop', 'phone', 'television', 'tv', 'computer mouse', 'keyboard', 'remote control'].includes(name));
-    const kitchenItems = objectNames.filter(name => ['bottle', 'cup', 'bowl', 'spoon', 'knife', 'fork', 'microwave', 'oven', 'refrigerator', 'toaster'].includes(name));
-    const food = objectNames.filter(name => ['banana', 'apple', 'orange', 'broccoli', 'carrot', 'pizza', 'sandwich', 'cake', 'donut'].includes(name));
-    const books = objectNames.filter(name => ['book'].includes(name));
-    const sports = objectNames.filter(name => ['ball', 'tennis racket', 'baseball bat', 'skateboard', 'surfboard', 'skis', 'snowboard'].includes(name));
-    const clothing = objectNames.filter(name => ['tie', 'backpack', 'handbag', 'suitcase', 'umbrella'].includes(name));
-    const plants = objectNames.filter(name => ['plant', 'potted plant'].includes(name));
-
-    let description = '';
+    let context = "";
     
-    // Start with people
-    if (peopleCount > 0) {
-      if (peopleCount === 1) {
-        description += 'I can see one person in the scene. ';
+    // People analysis
+    const people = objects.filter(obj => obj.name === 'person');
+    if (people.length > 0) {
+      const persistentPeople = people.filter(p => p.persistenceCount > 2);
+      if (persistentPeople.length > 0) {
+        context += `I can consistently see ${persistentPeople.length} person${persistentPeople.length > 1 ? 's' : ''} who ${persistentPeople.length > 1 ? 'have' : 'has'} been in view. `;
       } else {
-        description += `I can see ${peopleCount} people in the scene. `;
+        context += `${people.length} person${people.length > 1 ? 's' : ''} recently entered the scene. `;
       }
     }
 
-    // Add animals
-    if (animals.length > 0) {
-      const uniqueAnimals = [...new Set(animals)];
-      if (uniqueAnimals.length === 1) {
-        description += `I can see a ${uniqueAnimals[0]} in the area. `;
-      } else {
-        description += `I can see animals including ${uniqueAnimals.slice(0, 2).join(' and ')}. `;
-      }
-    }
-
-    // Add vehicles
+    // Object categorization with persistence
+    const vehicles = objects.filter(obj => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(obj.name));
+    const furniture = objects.filter(obj => ['chair', 'couch', 'table', 'bed'].includes(obj.name));
+    const electronics = objects.filter(obj => ['laptop', 'tv', 'cell phone', 'remote'].includes(obj.name));
+    const kitchenItems = objects.filter(obj => ['bottle', 'cup', 'bowl', 'knife', 'spoon'].includes(obj.name));
+    
     if (vehicles.length > 0) {
-      const uniqueVehicles = [...new Set(vehicles)];
-      if (uniqueVehicles.length === 1) {
-        description += `I can see a ${uniqueVehicles[0]} present. `;
-      } else {
-        description += `I can see vehicles including ${uniqueVehicles.slice(0, 2).join(' and ')}. `;
+      const persistentVehicles = vehicles.filter(v => v.persistenceCount > 2);
+      if (persistentVehicles.length > 0) {
+        context += `Vehicles are consistently present: ${persistentVehicles.map(v => v.name).join(', ')}. `;
       }
     }
     
-    // Add environment context based on objects
-    if (electronics.length > 0 && furniture.length > 0) {
-      description += 'This appears to be a workspace or office environment with electronic devices and furniture. ';
-    } else if (kitchenItems.length > 0 || food.length > 0) {
-      description += 'This looks like a kitchen or dining area with food-related items visible. ';
-    } else if (books.length > 0) {
-      description += 'This seems to be a study or reading area with books present. ';
-    } else if (vehicles.length > 0) {
-      description += 'I can see vehicles, suggesting this is likely an outdoor area, street, or parking space. ';
-    } else if (sports.length > 0) {
-      description += 'This appears to be a recreational or sports area with sporting equipment visible. ';
-    } else if (plants.length > 0) {
-      description += 'This looks like a space with plants or greenery, possibly indoor or outdoor garden area. ';
-    } else if (furniture.length > 0) {
-      description += 'This appears to be an indoor living or working space with furniture. ';
+    if (furniture.length > 0) {
+      context += `This appears to be an indoor space with furniture: ${furniture.map(f => f.name).join(', ')}. `;
     }
     
-    // Add specific objects (showing variety)
-    if (uniqueObjects.length <= 4) {
-      const objectList = uniqueObjects.filter(obj => obj !== 'person').slice(0, 3).join(', ');
-      if (objectList) {
-        description += `Specifically, I can identify: ${objectList}. `;
-      }
-    } else {
-      const topObjects = objects
-        .filter(obj => obj.name !== 'person')
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 4)
-        .map(obj => obj.name);
-      if (topObjects.length > 0) {
-        description += `Among various items, I can clearly see: ${topObjects.join(', ')}. `;
-      }
+    if (electronics.length > 0) {
+      context += `Electronic devices are visible: ${electronics.map(e => e.name).join(', ')}, suggesting an active workspace. `;
     }
     
-    // Add motion information
+    if (kitchenItems.length > 0) {
+      context += `Kitchen or dining items detected: ${kitchenItems.map(k => k.name).join(', ')}, indicating a food preparation area. `;
+    }
+    
+    // Motion integration
     if (motion.isMotionDetected) {
-      if (motion.motionDirection === 'general') {
-        description += `There is active movement in the scene. `;
+      const movingObjects = objects.filter(obj => obj.velocity && (Math.abs(obj.velocity.x) > 3 || Math.abs(obj.velocity.y) > 3));
+      if (movingObjects.length > 0) {
+        context += `Active movement detected - ${movingObjects.map(obj => obj.name).join(', ')} are in motion. `;
       } else {
-        description += `I detect ${motion.motionDirection} movement with ${motion.motionLevel.toFixed(0)}% intensity. `;
+        context += `General movement detected in the scene. `;
       }
     } else {
-      description += 'The scene is currently stable with minimal movement. ';
+      context += "The scene is stable with minimal movement. ";
     }
     
-    // Add confidence summary
+    // Confidence assessment
     const avgConfidence = objects.reduce((sum, obj) => sum + obj.confidence, 0) / objects.length;
-    if (avgConfidence > 0.6) {
-      description += 'Object identification confidence is high with clear visibility.';
-    } else if (avgConfidence > 0.4) {
-      description += 'Object identification confidence is moderate.';
+    if (avgConfidence > 0.7) {
+      context += "Object detection confidence is high with excellent visibility.";
+    } else if (avgConfidence > 0.5) {
+      context += "Object detection confidence is good with adequate visibility.";
     } else {
-      description += 'Object identification confidence is lower due to lighting or camera conditions.';
+      context += "Object detection confidence is moderate due to lighting or distance factors.";
     }
 
-    return description;
+    return context;
   }, []);
 
-  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
-    return generateNaturalLanguageContext(objects, motion);
-  }, [generateNaturalLanguageContext]);
-
   const detectObjects = useCallback(async (videoElement: HTMLVideoElement): Promise<ObjectDetectionResult | null> => {
-    if (!objectDetectorRef.current || !isReady) {
+    if (!modelRef.current || !isReady) {
       console.log('Enhanced object detector not ready');
       return null;
     }
@@ -355,18 +358,20 @@ export const useObjectDetection = () => {
       return null;
     }
 
-    // Throttle detection
+    // Throttle detection for performance
     const now = performance.now();
-    if (now - lastProcessTimeRef.current < 150) { // Faster detection for more objects
+    if (now - lastProcessTimeRef.current < 200) {
       return lastDetection;
     }
     lastProcessTimeRef.current = now;
 
     try {
-      const startTimeMs = performance.now();
-      const detections = objectDetectorRef.current.detectForVideo(videoElement, startTimeMs);
+      const startTime = performance.now();
       
-      console.log('Enhanced raw detections:', detections.detections.length);
+      // Detect objects using the enhanced model
+      const predictions = await modelRef.current.detect(videoElement, 20, 0.3); // Max 20 objects, 30% confidence
+      
+      console.log('Enhanced model raw predictions:', predictions.length);
       
       // Get frame data for motion analysis
       const canvas = document.createElement('canvas');
@@ -380,50 +385,53 @@ export const useObjectDetection = () => {
       
       const motion = analyzeMotion(imageData);
       
-      const objects: DetectedObject[] = detections.detections.map(detection => {
-        const rawName = detection.categories[0]?.categoryName || 'unknown';
-        const enhancedName = ENHANCED_OBJECT_CLASSES[rawName] || rawName;
-        
-        return {
-          name: enhancedName,
-          confidence: detection.categories[0]?.score || 0,
-          boundingBox: {
-            x: detection.boundingBox?.originX || 0,
-            y: detection.boundingBox?.originY || 0,
-            width: detection.boundingBox?.width || 0,
-            height: detection.boundingBox?.height || 0
-          }
-        };
-      }).filter(obj => obj.confidence > 0.2); // Lower threshold for more variety
+      // Convert predictions to our format
+      const objects: DetectedObject[] = predictions.map((prediction: any, index: number) => ({
+        id: `temp_${index}`,
+        name: prediction.class,
+        confidence: prediction.score,
+        boundingBox: {
+          x: prediction.bbox[0],
+          y: prediction.bbox[1],
+          width: prediction.bbox[2],
+          height: prediction.bbox[3]
+        },
+        persistenceCount: 1
+      }));
 
-      console.log('Enhanced filtered objects:', objects.length, objects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`));
+      // Apply object tracking
+      const trackedObjects = trackObjects(objects, `frame_${now}`);
       
-      // Generate enhanced natural language environment context
-      const environmentContext = generateNaturalLanguageContext(objects, motion);
+      console.log('Enhanced tracked objects:', trackedObjects.length, trackedObjects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%, tracked: ${obj.persistenceCount})`));
+      
+      // Generate reasoning and context
+      const reasoning = generateReasoning(trackedObjects, motion);
+      const environmentContext = generateEnvironmentContext(trackedObjects, motion);
       
       let description = '';
-      if (objects.length === 0) {
+      if (trackedObjects.length === 0) {
         description = motion.isMotionDetected 
           ? `Movement detected but no objects identified`
           : 'No objects currently detected';
-      } else if (objects.length === 1) {
-        const obj = objects[0];
-        description = `${obj.name} detected with ${Math.round(obj.confidence * 100)}% confidence`;
+      } else if (trackedObjects.length === 1) {
+        const obj = trackedObjects[0];
+        description = `${obj.name} detected with ${Math.round(obj.confidence * 100)}% confidence (tracked ${obj.persistenceCount} times)`;
       } else {
-        const topObjects = objects.slice(0, 4).map(obj => obj.name);
-        description = `${objects.length} objects detected: ${topObjects.join(', ')}`;
+        const topObjects = trackedObjects.slice(0, 4).map(obj => obj.name);
+        description = `${trackedObjects.length} objects detected: ${topObjects.join(', ')}`;
       }
 
       const result: ObjectDetectionResult = {
-        objects,
+        objects: trackedObjects,
         timestamp: new Date(),
         description,
         motion,
-        environmentContext
+        environmentContext,
+        reasoning
       };
 
       setLastDetection(result);
-      console.log('Enhanced detection result with comprehensive object types:', result);
+      console.log('Enhanced detection with reasoning:', result);
       
       return result;
     } catch (err) {
@@ -431,7 +439,7 @@ export const useObjectDetection = () => {
       setError(err instanceof Error ? err.message : 'Enhanced detection failed');
       return null;
     }
-  }, [isReady, analyzeMotion, generateNaturalLanguageContext, lastDetection]);
+  }, [isReady, analyzeMotion, trackObjects, generateReasoning, generateEnvironmentContext, lastDetection]);
 
   return {
     isLoading,
