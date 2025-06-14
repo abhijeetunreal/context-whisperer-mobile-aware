@@ -49,9 +49,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, [camera.isActive]);
 
-  // Initialize advanced object detection model when component mounts
+  // Initialize MediaPipe object detection model when component mounts
   useEffect(() => {
-    console.log('Initializing advanced object detection model...');
+    console.log('Initializing MediaPipe ObjectDetector for enhanced accuracy...');
     objectDetection.initializeDetector();
   }, [objectDetection.initializeDetector]);
 
@@ -86,7 +86,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, []);
 
-  // Enhanced real-time object detection with improved accuracy
+  // Enhanced MediaPipe object detection with superior accuracy
   useEffect(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
@@ -94,26 +94,25 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting advanced object detection with improved accuracy...');
+      console.log('Starting MediaPipe object detection with enhanced accuracy...');
       
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
           try {
             const result = await objectDetection.detectObjects(camera.videoRef.current);
             if (result) {
-              console.log('Advanced detection result:', result.objects.length, 'objects with improved tracking');
+              console.log('MediaPipe detection result:', result.objects.length, 'objects with superior accuracy');
               
-              // Log detected object types for debugging
               const objectTypes = [...new Set(result.objects.map(obj => obj.name))];
               if (objectTypes.length > 0) {
-                console.log('Detected object types:', objectTypes.join(', '));
+                console.log('Detected with MediaPipe:', objectTypes.join(', '));
               }
             }
           } catch (error) {
-            console.error('Advanced object detection error:', error);
+            console.error('MediaPipe object detection error:', error);
           }
         }
-      }, 200); // Slightly faster for better responsiveness
+      }, 150); // Optimized interval for MediaPipe
     }
 
     return () => {
@@ -253,9 +252,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">Advanced Object Recognition</h3>
+            <h3 className="font-semibold text-slate-800">MediaPipe Enhanced Detection</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'High-accuracy detection for daily life objects' : 'Camera inactive'}
+              {camera.isActive ? 'Superior accuracy for everyday objects' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -263,7 +262,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.isLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Loading Advanced AI
+              Loading MediaPipe
             </Badge>
           )}
           {isAnalyzingContext && (
@@ -302,7 +301,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
       {objectDetection.error && (
         <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-          <p className="text-sm text-orange-700">AI Detection error: {objectDetection.error}</p>
+          <p className="text-sm text-orange-700">MediaPipe Detection error: {objectDetection.error}</p>
         </div>
       )}
 
@@ -333,7 +332,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             }}
           />
           
-          {/* Enhanced Object Annotations Overlay */}
+          {/* Enhanced Object Annotations with MediaPipe precision */}
           {camera.isActive && objectDetection.lastDetection && camera.videoRef.current && (
             <ObjectAnnotations
               objects={objectDetection.lastDetection.objects}
@@ -348,20 +347,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <CameraOff className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-                <p className="text-slate-500">Advanced object recognition camera</p>
-                <p className="text-xs text-slate-400 mt-1">Detects household items, tools, food, and more</p>
+                <p className="text-slate-500">MediaPipe enhanced object detection</p>
+                <p className="text-xs text-slate-400 mt-1">Superior accuracy for daily life objects</p>
               </div>
             </div>
           )}
 
           {camera.isActive && (
             <div className="absolute top-2 right-2 flex gap-2">
-              <Badge variant="default" className="bg-green-500 text-white text-xs">
-                Advanced AI
+              <Badge variant="default" className="bg-blue-500 text-white text-xs">
+                MediaPipe
               </Badge>
               {objectDetection.isReady && (
-                <Badge variant="secondary" className="bg-blue-500 text-white text-xs">
-                  Daily Objects
+                <Badge variant="secondary" className="bg-green-500 text-white text-xs">
+                  Enhanced AI
                 </Badge>
               )}
               {voiceEnabled && (
@@ -374,10 +373,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         </div>
       </div>
 
-      {/* Enhanced Object Detection Results with object type diversity */}
+      {/* Enhanced MediaPipe Object Detection Results */}
       {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
         <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-          <h4 className="font-medium text-green-800 mb-1">Advanced Object Recognition</h4>
+          <h4 className="font-medium text-green-800 mb-1">MediaPipe Enhanced Detection</h4>
           <p className="text-sm text-green-700 mb-2">
             {objectDetection.lastDetection.environmentContext}
           </p>
