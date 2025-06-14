@@ -1,13 +1,13 @@
-
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Camera, CameraOff, Eye, AlertCircle, Volume2, Loader2 } from 'lucide-react';
+import { Camera, CameraOff, Eye, AlertCircle, Volume2, Loader2, Activity } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import { useContextDetection } from '@/hooks/useContextDetection';
 import { useObjectDetection } from '@/hooks/useObjectDetection';
 import { useTextToSpeech } from '@/hooks/useTextToSpeech';
+import ObjectAnnotations from '@/components/ObjectAnnotations';
 
 interface CameraFeedProps {
   isActive: boolean;
@@ -30,6 +30,22 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const textToSpeech = useTextToSpeech({ apiKey });
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSpokenObjectsRef = useRef<string | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+
+  // Update container dimensions when video loads
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (videoContainerRef.current) {
+        const rect = videoContainerRef.current.getBoundingClientRect();
+        setContainerDimensions({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, [camera.isActive]);
 
   // Initialize MediaPipe when component mounts
   useEffect(() => {
@@ -132,7 +148,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           <div>
             <h3 className="font-semibold text-slate-800">AI-Powered Camera Feed</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Real-time object detection with voice descriptions' : 'Camera inactive'}
+              {camera.isActive ? 'Real-time object detection with annotations and voice descriptions' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -147,6 +163,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             <Badge variant="outline" className="flex items-center gap-1">
               <Eye className="w-3 h-3 animate-pulse" />
               Analyzing
+            </Badge>
+          )}
+          {objectDetection.lastDetection?.motion.isMotionDetected && (
+            <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
+              <Activity className="w-3 h-3 animate-pulse text-blue-600" />
+              Motion
             </Badge>
           )}
           {textToSpeech.isSpeaking && voiceEnabled && (
@@ -184,63 +206,91 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       )}
 
       <div className="relative">
-        <video
-          ref={camera.videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`w-full h-48 object-cover rounded-lg border-2 ${
-            camera.isActive ? 'border-green-200' : 'border-slate-200'
-          }`}
-          style={{
-            display: camera.isActive ? 'block' : 'none'
-          }}
-        />
-        
-        {!camera.isActive && (
-          <div className="w-full h-48 bg-slate-100 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center">
-            <div className="text-center">
-              <CameraOff className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-              <p className="text-slate-500">AI-powered camera feed will appear here</p>
-              <p className="text-xs text-slate-400 mt-1">Real-time object detection with voice descriptions</p>
+        <div 
+          ref={videoContainerRef}
+          className="relative w-full aspect-square bg-slate-100 rounded-lg border-2 border-slate-200 overflow-hidden"
+        >
+          <video
+            ref={camera.videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-cover ${
+              camera.isActive ? 'block' : 'hidden'
+            }`}
+            onLoadedMetadata={() => {
+              if (videoContainerRef.current) {
+                const rect = videoContainerRef.current.getBoundingClientRect();
+                setContainerDimensions({ width: rect.width, height: rect.height });
+              }
+            }}
+          />
+          
+          {/* Object Annotations Overlay */}
+          {camera.isActive && objectDetection.lastDetection && camera.videoRef.current && (
+            <ObjectAnnotations
+              objects={objectDetection.lastDetection.objects}
+              videoWidth={camera.videoRef.current.videoWidth}
+              videoHeight={camera.videoRef.current.videoHeight}
+              containerWidth={containerDimensions.width}
+              containerHeight={containerDimensions.height}
+            />
+          )}
+          
+          {!camera.isActive && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <CameraOff className="w-12 h-12 text-slate-400 mx-auto mb-2" />
+                <p className="text-slate-500">AI-powered camera feed will appear here</p>
+                <p className="text-xs text-slate-400 mt-1">Square format with real-time object annotations</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {camera.isActive && (
-          <div className="absolute top-2 right-2 flex gap-2">
-            <Badge variant="default" className="bg-green-500 text-white">
-              Live
-            </Badge>
-            {objectDetection.isReady && (
-              <Badge variant="secondary" className="bg-blue-500 text-white">
-                AI Ready
+          {camera.isActive && (
+            <div className="absolute top-2 right-2 flex gap-2">
+              <Badge variant="default" className="bg-green-500 text-white">
+                Live
               </Badge>
-            )}
-            {voiceEnabled && (
-              <Badge variant="outline" className="bg-purple-50 text-purple-700">
-                Voice On
-              </Badge>
-            )}
-          </div>
-        )}
+              {objectDetection.isReady && (
+                <Badge variant="secondary" className="bg-blue-500 text-white">
+                  AI Ready
+                </Badge>
+              )}
+              {voiceEnabled && (
+                <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                  Voice On
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Object Detection Results */}
+      {/* Enhanced Object Detection Results */}
       {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
         <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
           <h4 className="font-medium text-green-800 mb-1">Objects Detected</h4>
           <p className="text-sm text-green-700 mb-2">
             {objectDetection.lastDetection.description}
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-2">
             {objectDetection.lastDetection.objects.map((obj, index) => (
               <Badge key={index} variant="outline" className="text-xs bg-green-100">
                 {obj.name} ({Math.round(obj.confidence * 100)}%)
               </Badge>
             ))}
           </div>
-          <p className="text-xs text-green-600 mt-1">
+          {objectDetection.lastDetection.motion.isMotionDetected && (
+            <p className="text-xs text-green-600 mb-1">
+              Motion: {objectDetection.lastDetection.motion.motionDirection} movement detected 
+              (Level: {objectDetection.lastDetection.motion.motionLevel}%)
+            </p>
+          )}
+          <p className="text-xs text-green-600 mb-1">
+            Environment: {objectDetection.lastDetection.environmentContext}
+          </p>
+          <p className="text-xs text-green-600">
             Last detected: {objectDetection.lastDetection.timestamp.toLocaleTimeString()}
           </p>
         </div>

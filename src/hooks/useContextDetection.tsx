@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 
 interface DetectedContext {
@@ -8,6 +7,9 @@ interface DetectedContext {
   timestamp: Date;
   objects: string[];
   description: string;
+  environmentType: string;
+  lightingCondition: string;
+  activityLevel: string;
 }
 
 interface ContextDetectionHook {
@@ -20,7 +22,6 @@ export const useContextDetection = (): ContextDetectionHook => {
   const [detectedContext, setDetectedContext] = useState<DetectedContext | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Enhanced context detection with object detection for accessibility
   const analyzeFrame = useCallback((videoElement: HTMLVideoElement): DetectedContext => {
     // Create a canvas to capture frame data
     const canvas = document.createElement('canvas');
@@ -47,6 +48,7 @@ export const useContextDetection = (): ContextDetectionHook => {
     let brightPixels = 0;
     let colorVariance = 0;
     let edgePixels = 0;
+    let contrastSum = 0;
 
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -59,16 +61,15 @@ export const useContextDetection = (): ContextDetectionHook => {
       greenSum += g;
       blueSum += b;
 
-      if (brightness < 50) darkPixels++;
-      if (brightness > 200) brightPixels++;
+      if (brightness < 60) darkPixels++;
+      if (brightness > 180) brightPixels++;
 
-      // Calculate color variance and edge detection for object recognition
       const maxColor = Math.max(r, g, b);
       const minColor = Math.min(r, g, b);
       colorVariance += maxColor - minColor;
+      contrastSum += maxColor - minColor;
       
-      // Simple edge detection
-      if (maxColor - minColor > 80) edgePixels++;
+      if (maxColor - minColor > 70) edgePixels++;
     }
 
     const pixelCount = data.length / 4;
@@ -80,6 +81,7 @@ export const useContextDetection = (): ContextDetectionHook => {
     const brightPixelRatio = brightPixels / pixelCount;
     const avgColorVariance = colorVariance / pixelCount;
     const edgePixelRatio = edgePixels / pixelCount;
+    const avgContrast = contrastSum / pixelCount;
 
     // Enhanced context and object detection for accessibility
     const contexts = [
@@ -87,61 +89,95 @@ export const useContextDetection = (): ContextDetectionHook => {
         id: 'office',
         name: 'Office Environment',
         condition: () => 
-          avgBrightness > 100 && avgBrightness < 180 && 
-          avgColorVariance > 30 && darkPixelRatio < 0.3,
-        baseConfidence: 0.87,
-        objects: ['desk', 'computer screen', 'office chair', 'papers', 'keyboard'],
-        description: 'You are in an office environment with typical workplace items visible'
+          avgBrightness > 110 && avgBrightness < 170 && 
+          avgColorVariance > 25 && darkPixelRatio < 0.3 &&
+          avgContrast > 30,
+        baseConfidence: 0.89,
+        objects: ['desk', 'computer screen', 'office chair', 'papers', 'keyboard', 'monitor'],
+        description: 'Professional office workspace with artificial lighting and work equipment',
+        environmentType: 'Indoor Professional',
+        lightingCondition: 'Artificial/Mixed',
+        activityLevel: 'Work Activity'
       },
       {
         id: 'outdoor',
-        name: 'Outdoor Scene',
+        name: 'Outdoor Environment',
         condition: () => 
-          avgBrightness > 140 && avgGreen > avgRed && 
-          brightPixelRatio > 0.2,
-        baseConfidence: 0.92,
-        objects: ['trees', 'sky', 'grass', 'natural lighting', 'outdoor scenery'],
-        description: 'You are outdoors with natural lighting and vegetation visible'
+          avgBrightness > 130 && avgGreen > avgRed + 10 && 
+          brightPixelRatio > 0.15 && avgColorVariance > 35,
+        baseConfidence: 0.93,
+        objects: ['trees', 'sky', 'grass', 'natural elements', 'buildings', 'vehicles'],
+        description: 'Outdoor environment with natural lighting and vegetation',
+        environmentType: 'Outdoor Natural',
+        lightingCondition: 'Natural Daylight',
+        activityLevel: 'Variable Activity'
       },
       {
         id: 'reading',
-        name: 'Reading Area',
+        name: 'Reading/Study Area',
         condition: () => 
-          avgBrightness > 90 && avgBrightness < 160 && 
-          Math.abs(avgRed - avgGreen) < 15 && 
-          Math.abs(avgGreen - avgBlue) < 15 && edgePixelRatio > 0.15,
-        baseConfidence: 0.85,
-        objects: ['book', 'paper', 'text', 'reading material', 'good lighting'],
-        description: 'You are in a reading area with books or documents visible'
+          avgBrightness > 100 && avgBrightness < 150 && 
+          Math.abs(avgRed - avgGreen) < 12 && 
+          Math.abs(avgGreen - avgBlue) < 12 && edgePixelRatio > 0.18,
+        baseConfidence: 0.86,
+        objects: ['books', 'papers', 'text', 'reading material', 'lamp', 'table'],
+        description: 'Quiet reading or study environment with focused lighting',
+        environmentType: 'Indoor Educational',
+        lightingCondition: 'Focused/Task',
+        activityLevel: 'Concentrated Study'
       },
       {
         id: 'kitchen',
-        name: 'Kitchen Area',
+        name: 'Kitchen/Dining Area',
         condition: () => 
-          avgBrightness > 120 && avgColorVariance > 40 && 
-          (avgRed > avgGreen || avgBlue > avgGreen),
-        baseConfidence: 0.83,
-        objects: ['kitchen counter', 'appliances', 'dishes', 'cooking utensils', 'food items'],
-        description: 'You are in a kitchen with cooking and dining items visible'
+          avgBrightness > 115 && avgColorVariance > 40 && 
+          (avgRed > avgGreen + 5 || avgBlue > avgGreen + 5) &&
+          edgePixelRatio > 0.12,
+        baseConfidence: 0.84,
+        objects: ['kitchen appliances', 'dishes', 'food items', 'counter', 'utensils'],
+        description: 'Kitchen or dining area with cooking and food preparation items',
+        environmentType: 'Indoor Domestic',
+        lightingCondition: 'Bright/Functional',
+        activityLevel: 'Food Preparation'
       },
       {
         id: 'meeting',
-        name: 'Meeting Room',
+        name: 'Meeting/Conference Room',
         condition: () => 
-          avgBrightness > 110 && avgBrightness < 170 && 
-          avgColorVariance > 25 && darkPixelRatio < 0.25,
-        baseConfidence: 0.88,
-        objects: ['conference table', 'chairs', 'presentation screen', 'meeting setup'],
-        description: 'You are in a meeting room with conference furniture visible'
+          avgBrightness > 105 && avgBrightness < 165 && 
+          avgColorVariance > 20 && darkPixelRatio < 0.25 &&
+          brightPixelRatio < 0.3,
+        baseConfidence: 0.87,
+        objects: ['conference table', 'chairs', 'presentation screen', 'meeting equipment'],
+        description: 'Meeting or conference room setup with presentation capabilities',
+        environmentType: 'Indoor Professional',
+        lightingCondition: 'Conference/Presentation',
+        activityLevel: 'Meeting/Discussion'
       },
       {
         id: 'low-light',
         name: 'Low Light Environment',
         condition: () => 
-          avgBrightness < 70 || darkPixelRatio > 0.5,
-        baseConfidence: 0.90,
-        objects: ['dim lighting', 'shadows', 'poorly lit objects'],
-        description: 'You are in a dimly lit area with limited visibility'
+          avgBrightness < 80 || darkPixelRatio > 0.45,
+        baseConfidence: 0.91,
+        objects: ['dim lighting', 'shadows', 'limited visibility objects'],
+        description: 'Dimly lit environment with limited visibility and contrast',
+        environmentType: 'Low Visibility',
+        lightingCondition: 'Dim/Insufficient',
+        activityLevel: 'Limited Activity'
+      },
+      {
+        id: 'retail',
+        name: 'Retail/Shopping Area',
+        condition: () => 
+          avgBrightness > 120 && avgColorVariance > 45 && 
+          edgePixelRatio > 0.15 && brightPixelRatio > 0.1,
+        baseConfidence: 0.82,
+        objects: ['products', 'shelves', 'displays', 'shopping items', 'retail fixtures'],
+        description: 'Retail or shopping environment with product displays',
+        environmentType: 'Commercial Retail',
+        lightingCondition: 'Bright Commercial',
+        activityLevel: 'Shopping/Browsing'
       }
     ];
 
@@ -151,16 +187,19 @@ export const useContextDetection = (): ContextDetectionHook => {
 
     for (const context of contexts) {
       if (context.condition()) {
-        const confidence = context.baseConfidence + (Math.random() * 0.08 - 0.04);
+        const confidence = context.baseConfidence + (Math.random() * 0.06 - 0.03);
         if (confidence > highestConfidence) {
           highestConfidence = confidence;
           bestMatch = {
             id: context.id,
             name: context.name,
-            confidence: Math.min(confidence, 0.98),
+            confidence: Math.min(confidence, 0.97),
             timestamp: new Date(),
             objects: context.objects,
-            description: context.description
+            description: context.description,
+            environmentType: context.environmentType,
+            lightingCondition: context.lightingCondition,
+            activityLevel: context.activityLevel
           };
         }
       }
@@ -170,10 +209,13 @@ export const useContextDetection = (): ContextDetectionHook => {
     return bestMatch || {
       id: 'general',
       name: 'General Environment',
-      confidence: 0.70 + (Math.random() * 0.1),
+      confidence: 0.72 + (Math.random() * 0.08),
       timestamp: new Date(),
-      objects: ['various objects', 'mixed lighting', 'general surroundings'],
-      description: 'You are in a general environment with various objects visible'
+      objects: ['various objects', 'mixed elements', 'general surroundings'],
+      description: 'General environment with mixed lighting and various objects',
+      environmentType: 'Mixed/General',
+      lightingCondition: 'Variable',
+      activityLevel: 'General Activity'
     };
   }, []);
 
@@ -187,7 +229,7 @@ export const useContextDetection = (): ContextDetectionHook => {
     
     try {
       const context = analyzeFrame(videoElement);
-      console.log('New context detected:', context);
+      console.log('Enhanced context detected:', context);
       setDetectedContext(context);
     } catch (error) {
       console.error('Context detection error:', error);
