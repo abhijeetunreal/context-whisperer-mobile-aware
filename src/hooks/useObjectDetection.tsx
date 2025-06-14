@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef } from 'react';
 import { ObjectDetector, FilesetResolver } from '@mediapipe/tasks-vision';
 
@@ -26,6 +27,97 @@ interface ObjectDetectionResult {
   environmentContext: string;
 }
 
+// Comprehensive object class mapping for better detection
+const ENHANCED_OBJECT_CLASSES = {
+  // People and animals
+  'person': 'person',
+  'bicycle': 'bike',
+  'car': 'car',
+  'motorcycle': 'motorcycle',
+  'airplane': 'airplane',
+  'bus': 'bus',
+  'train': 'train',
+  'truck': 'truck',
+  'boat': 'boat',
+  'traffic light': 'traffic light',
+  'fire hydrant': 'fire hydrant',
+  'stop sign': 'stop sign',
+  'parking meter': 'parking meter',
+  'bench': 'bench',
+  'bird': 'bird',
+  'cat': 'cat',
+  'dog': 'dog',
+  'horse': 'horse',
+  'sheep': 'sheep',
+  'cow': 'cow',
+  'elephant': 'elephant',
+  'bear': 'bear',
+  'zebra': 'zebra',
+  'giraffe': 'giraffe',
+  
+  // Household items
+  'backpack': 'backpack',
+  'umbrella': 'umbrella',
+  'handbag': 'handbag',
+  'tie': 'tie',
+  'suitcase': 'suitcase',
+  'frisbee': 'frisbee',
+  'skis': 'skis',
+  'snowboard': 'snowboard',
+  'sports ball': 'ball',
+  'kite': 'kite',
+  'baseball bat': 'baseball bat',
+  'baseball glove': 'baseball glove',
+  'skateboard': 'skateboard',
+  'surfboard': 'surfboard',
+  'tennis racket': 'tennis racket',
+  
+  // Kitchen and food
+  'bottle': 'bottle',
+  'wine glass': 'wine glass',
+  'cup': 'cup',
+  'fork': 'fork',
+  'knife': 'knife',
+  'spoon': 'spoon',
+  'bowl': 'bowl',
+  'banana': 'banana',
+  'apple': 'apple',
+  'sandwich': 'sandwich',
+  'orange': 'orange',
+  'broccoli': 'broccoli',
+  'carrot': 'carrot',
+  'hot dog': 'hot dog',
+  'pizza': 'pizza',
+  'donut': 'donut',
+  'cake': 'cake',
+  
+  // Furniture and household
+  'chair': 'chair',
+  'couch': 'sofa',
+  'potted plant': 'plant',
+  'bed': 'bed',
+  'dining table': 'table',
+  'toilet': 'toilet',
+  'tv': 'television',
+  'laptop': 'laptop',
+  'mouse': 'computer mouse',
+  'remote': 'remote control',
+  'keyboard': 'keyboard',
+  'cell phone': 'phone',
+  'microwave': 'microwave',
+  'oven': 'oven',
+  'toaster': 'toaster',
+  'sink': 'sink',
+  'refrigerator': 'refrigerator',
+  'book': 'book',
+  'clock': 'clock',
+  'vase': 'vase',
+  'scissors': 'scissors',
+  'teddy bear': 'teddy bear',
+  'hair drier': 'hair dryer',
+  'toothbrush': 'toothbrush'
+};
+
 export const useObjectDetection = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -44,29 +136,29 @@ export const useObjectDetection = () => {
     setError(null);
     
     try {
-      console.log('Initializing MediaPipe Object Detector...');
+      console.log('Initializing Enhanced MediaPipe Object Detector...');
       
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
       
-      // Use a more reliable model configuration
+      // Use the more comprehensive COCO-trained model for better object variety
       const objectDetector = await ObjectDetector.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite",
           delegate: "GPU"
         },
-        scoreThreshold: 0.3, // Higher threshold for more reliable detection
-        maxResults: 10, // Reasonable number of objects
+        scoreThreshold: 0.25, // Lower threshold to catch more objects
+        maxResults: 15, // More objects for comprehensive detection
         runningMode: "VIDEO"
       });
       
       objectDetectorRef.current = objectDetector;
       setIsReady(true);
-      console.log('MediaPipe Object Detector initialized successfully');
+      console.log('Enhanced MediaPipe Object Detector initialized successfully with comprehensive object classes');
     } catch (err) {
-      console.error('Failed to initialize MediaPipe:', err);
-      setError(err instanceof Error ? err.message : 'Failed to initialize object detector');
+      console.error('Failed to initialize Enhanced MediaPipe:', err);
+      setError(err instanceof Error ? err.message : 'Failed to initialize enhanced object detector');
     } finally {
       setIsLoading(false);
     }
@@ -146,16 +238,19 @@ export const useObjectDetection = () => {
     const objectNames = objects.map(obj => obj.name);
     const uniqueObjects = [...new Set(objectNames)];
     
-    // Count people
+    // Enhanced categorization with more object types
     const peopleCount = objectNames.filter(name => name === 'person').length;
-    
-    // Categorize other objects
-    const furniture = objectNames.filter(name => ['chair', 'couch', 'table', 'bed'].includes(name));
-    const electronics = objectNames.filter(name => ['laptop', 'phone', 'tv', 'computer', 'mouse', 'keyboard'].includes(name));
-    const vehicles = objectNames.filter(name => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(name));
-    const kitchenItems = objectNames.filter(name => ['bottle', 'cup', 'bowl', 'spoon', 'knife', 'fork'].includes(name));
+    const animals = objectNames.filter(name => ['bird', 'cat', 'dog', 'horse', 'cow', 'sheep', 'elephant', 'bear', 'zebra', 'giraffe'].includes(name));
+    const vehicles = objectNames.filter(name => ['car', 'truck', 'bus', 'motorcycle', 'bike', 'bicycle', 'airplane', 'boat', 'train'].includes(name));
+    const furniture = objectNames.filter(name => ['chair', 'sofa', 'couch', 'table', 'bed', 'bench'].includes(name));
+    const electronics = objectNames.filter(name => ['laptop', 'phone', 'television', 'tv', 'computer mouse', 'keyboard', 'remote control'].includes(name));
+    const kitchenItems = objectNames.filter(name => ['bottle', 'cup', 'bowl', 'spoon', 'knife', 'fork', 'microwave', 'oven', 'refrigerator', 'toaster'].includes(name));
+    const food = objectNames.filter(name => ['banana', 'apple', 'orange', 'broccoli', 'carrot', 'pizza', 'sandwich', 'cake', 'donut'].includes(name));
     const books = objectNames.filter(name => ['book'].includes(name));
-    
+    const sports = objectNames.filter(name => ['ball', 'tennis racket', 'baseball bat', 'skateboard', 'surfboard', 'skis', 'snowboard'].includes(name));
+    const clothing = objectNames.filter(name => ['tie', 'backpack', 'handbag', 'suitcase', 'umbrella'].includes(name));
+    const plants = objectNames.filter(name => ['plant', 'potted plant'].includes(name));
+
     let description = '';
     
     // Start with people
@@ -166,23 +261,47 @@ export const useObjectDetection = () => {
         description += `I can see ${peopleCount} people in the scene. `;
       }
     }
+
+    // Add animals
+    if (animals.length > 0) {
+      const uniqueAnimals = [...new Set(animals)];
+      if (uniqueAnimals.length === 1) {
+        description += `I can see a ${uniqueAnimals[0]} in the area. `;
+      } else {
+        description += `I can see animals including ${uniqueAnimals.slice(0, 2).join(' and ')}. `;
+      }
+    }
+
+    // Add vehicles
+    if (vehicles.length > 0) {
+      const uniqueVehicles = [...new Set(vehicles)];
+      if (uniqueVehicles.length === 1) {
+        description += `I can see a ${uniqueVehicles[0]} present. `;
+      } else {
+        description += `I can see vehicles including ${uniqueVehicles.slice(0, 2).join(' and ')}. `;
+      }
+    }
     
     // Add environment context based on objects
     if (electronics.length > 0 && furniture.length > 0) {
       description += 'This appears to be a workspace or office environment with electronic devices and furniture. ';
-    } else if (kitchenItems.length > 0) {
+    } else if (kitchenItems.length > 0 || food.length > 0) {
       description += 'This looks like a kitchen or dining area with food-related items visible. ';
     } else if (books.length > 0) {
-      description += 'This seems to be a study or reading area. ';
+      description += 'This seems to be a study or reading area with books present. ';
     } else if (vehicles.length > 0) {
-      description += 'I can see vehicles, suggesting this is likely an outdoor or parking area. ';
+      description += 'I can see vehicles, suggesting this is likely an outdoor area, street, or parking space. ';
+    } else if (sports.length > 0) {
+      description += 'This appears to be a recreational or sports area with sporting equipment visible. ';
+    } else if (plants.length > 0) {
+      description += 'This looks like a space with plants or greenery, possibly indoor or outdoor garden area. ';
     } else if (furniture.length > 0) {
-      description += 'This appears to be an indoor living space with furniture. ';
+      description += 'This appears to be an indoor living or working space with furniture. ';
     }
     
-    // Add specific objects
-    if (uniqueObjects.length <= 3) {
-      const objectList = uniqueObjects.filter(obj => obj !== 'person').join(', ');
+    // Add specific objects (showing variety)
+    if (uniqueObjects.length <= 4) {
+      const objectList = uniqueObjects.filter(obj => obj !== 'person').slice(0, 3).join(', ');
       if (objectList) {
         description += `Specifically, I can identify: ${objectList}. `;
       }
@@ -190,10 +309,10 @@ export const useObjectDetection = () => {
       const topObjects = objects
         .filter(obj => obj.name !== 'person')
         .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 3)
+        .slice(0, 4)
         .map(obj => obj.name);
       if (topObjects.length > 0) {
-        description += `Among other items, I can clearly see: ${topObjects.join(', ')}. `;
+        description += `Among various items, I can clearly see: ${topObjects.join(', ')}. `;
       }
     }
     
@@ -211,7 +330,7 @@ export const useObjectDetection = () => {
     // Add confidence summary
     const avgConfidence = objects.reduce((sum, obj) => sum + obj.confidence, 0) / objects.length;
     if (avgConfidence > 0.6) {
-      description += 'Object identification confidence is high.';
+      description += 'Object identification confidence is high with clear visibility.';
     } else if (avgConfidence > 0.4) {
       description += 'Object identification confidence is moderate.';
     } else {
@@ -227,7 +346,7 @@ export const useObjectDetection = () => {
 
   const detectObjects = useCallback(async (videoElement: HTMLVideoElement): Promise<ObjectDetectionResult | null> => {
     if (!objectDetectorRef.current || !isReady) {
-      console.log('Object detector not ready');
+      console.log('Enhanced object detector not ready');
       return null;
     }
 
@@ -238,7 +357,7 @@ export const useObjectDetection = () => {
 
     // Throttle detection
     const now = performance.now();
-    if (now - lastProcessTimeRef.current < 200) {
+    if (now - lastProcessTimeRef.current < 150) { // Faster detection for more objects
       return lastDetection;
     }
     lastProcessTimeRef.current = now;
@@ -247,7 +366,7 @@ export const useObjectDetection = () => {
       const startTimeMs = performance.now();
       const detections = objectDetectorRef.current.detectForVideo(videoElement, startTimeMs);
       
-      console.log('Raw detections:', detections.detections.length);
+      console.log('Enhanced raw detections:', detections.detections.length);
       
       // Get frame data for motion analysis
       const canvas = document.createElement('canvas');
@@ -261,20 +380,25 @@ export const useObjectDetection = () => {
       
       const motion = analyzeMotion(imageData);
       
-      const objects: DetectedObject[] = detections.detections.map(detection => ({
-        name: detection.categories[0]?.categoryName || 'unknown',
-        confidence: detection.categories[0]?.score || 0,
-        boundingBox: {
-          x: detection.boundingBox?.originX || 0,
-          y: detection.boundingBox?.originY || 0,
-          width: detection.boundingBox?.width || 0,
-          height: detection.boundingBox?.height || 0
-        }
-      })).filter(obj => obj.confidence > 0.25);
+      const objects: DetectedObject[] = detections.detections.map(detection => {
+        const rawName = detection.categories[0]?.categoryName || 'unknown';
+        const enhancedName = ENHANCED_OBJECT_CLASSES[rawName] || rawName;
+        
+        return {
+          name: enhancedName,
+          confidence: detection.categories[0]?.score || 0,
+          boundingBox: {
+            x: detection.boundingBox?.originX || 0,
+            y: detection.boundingBox?.originY || 0,
+            width: detection.boundingBox?.width || 0,
+            height: detection.boundingBox?.height || 0
+          }
+        };
+      }).filter(obj => obj.confidence > 0.2); // Lower threshold for more variety
 
-      console.log('Filtered objects:', objects.length, objects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`));
+      console.log('Enhanced filtered objects:', objects.length, objects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`));
       
-      // Generate natural language environment context
+      // Generate enhanced natural language environment context
       const environmentContext = generateNaturalLanguageContext(objects, motion);
       
       let description = '';
@@ -286,7 +410,7 @@ export const useObjectDetection = () => {
         const obj = objects[0];
         description = `${obj.name} detected with ${Math.round(obj.confidence * 100)}% confidence`;
       } else {
-        const topObjects = objects.slice(0, 3).map(obj => obj.name);
+        const topObjects = objects.slice(0, 4).map(obj => obj.name);
         description = `${objects.length} objects detected: ${topObjects.join(', ')}`;
       }
 
@@ -299,12 +423,12 @@ export const useObjectDetection = () => {
       };
 
       setLastDetection(result);
-      console.log('Detection result with natural language:', result);
+      console.log('Enhanced detection result with comprehensive object types:', result);
       
       return result;
     } catch (err) {
-      console.error('Object detection error:', err);
-      setError(err instanceof Error ? err.message : 'Detection failed');
+      console.error('Enhanced object detection error:', err);
+      setError(err instanceof Error ? err.message : 'Enhanced detection failed');
       return null;
     }
   }, [isReady, analyzeMotion, generateNaturalLanguageContext, lastDetection]);
