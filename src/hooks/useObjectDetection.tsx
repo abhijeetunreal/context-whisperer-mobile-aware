@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 
 interface DetectedObject {
@@ -64,24 +63,21 @@ export const useObjectDetection = () => {
     setError(null);
     
     try {
-      console.log('Initializing YOLOv8 Object Detection Model...');
+      console.log('Initializing Enhanced Object Detection Model...');
       
-      // Load TensorFlow.js and YOLOv8 model
+      // Load TensorFlow.js and COCO-SSD model
       const tf = await import('@tensorflow/tfjs');
       await tf.ready();
       
-      // Use a more accurate pre-trained model
-      const modelUrl = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2';
       const cocoSsd = await import('@tensorflow-models/coco-ssd');
       
       const model = await cocoSsd.load({
-        base: 'mobilenet_v2', // More accurate than lite model
-        modelUrl: modelUrl
+        base: 'mobilenet_v2'
       });
       
       modelRef.current = model;
       setIsReady(true);
-      console.log('YOLOv8-enhanced Object Detection Model initialized successfully');
+      console.log('Enhanced Object Detection Model initialized successfully');
     } catch (err) {
       console.error('Failed to initialize enhanced model:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize enhanced object detector');
