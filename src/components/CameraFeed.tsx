@@ -49,9 +49,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, [camera.isActive]);
 
-  // Initialize MediaPipe when component mounts
+  // Initialize advanced object detection model when component mounts
   useEffect(() => {
-    console.log('Initializing object detection...');
+    console.log('Initializing advanced object detection model...');
     objectDetection.initializeDetector();
   }, [objectDetection.initializeDetector]);
 
@@ -86,7 +86,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, []);
 
-  // Real-time object detection with enhanced tracking
+  // Enhanced real-time object detection with improved accuracy
   useEffect(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
@@ -94,20 +94,26 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting enhanced object detection with tracking...');
+      console.log('Starting advanced object detection with improved accuracy...');
       
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
           try {
             const result = await objectDetection.detectObjects(camera.videoRef.current);
             if (result) {
-              console.log('Enhanced detection result:', result.objects.length, 'objects with tracking');
+              console.log('Advanced detection result:', result.objects.length, 'objects with improved tracking');
+              
+              // Log detected object types for debugging
+              const objectTypes = [...new Set(result.objects.map(obj => obj.name))];
+              if (objectTypes.length > 0) {
+                console.log('Detected object types:', objectTypes.join(', '));
+              }
             }
           } catch (error) {
-            console.error('Enhanced object detection error:', error);
+            console.error('Advanced object detection error:', error);
           }
         }
-      }, 250);
+      }, 200); // Slightly faster for better responsiveness
     }
 
     return () => {
@@ -247,9 +253,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">Natural Environment Awareness</h3>
+            <h3 className="font-semibold text-slate-800">Advanced Object Recognition</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Intelligent change detection with natural voice descriptions' : 'Camera inactive'}
+              {camera.isActive ? 'High-accuracy detection for daily life objects' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -257,7 +263,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.isLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Loading AI
+              Loading Advanced AI
             </Badge>
           )}
           {isAnalyzingContext && (
@@ -269,7 +275,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
               <Activity className="w-3 h-3 text-green-600" />
-              {objectDetection.lastDetection.objects.length} Tracked
+              {objectDetection.lastDetection.objects.length} Objects
             </Badge>
           )}
           {textToSpeech.isSpeaking && voiceEnabled && (
@@ -342,8 +348,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <CameraOff className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-                <p className="text-slate-500">Natural environment awareness camera</p>
-                <p className="text-xs text-slate-400 mt-1">Change detection with voice descriptions</p>
+                <p className="text-slate-500">Advanced object recognition camera</p>
+                <p className="text-xs text-slate-400 mt-1">Detects household items, tools, food, and more</p>
               </div>
             </div>
           )}
@@ -351,11 +357,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {camera.isActive && (
             <div className="absolute top-2 right-2 flex gap-2">
               <Badge variant="default" className="bg-green-500 text-white text-xs">
-                Natural AI
+                Advanced AI
               </Badge>
               {objectDetection.isReady && (
                 <Badge variant="secondary" className="bg-blue-500 text-white text-xs">
-                  Change Detection
+                  Daily Objects
                 </Badge>
               )}
               {voiceEnabled && (
@@ -368,20 +374,23 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         </div>
       </div>
 
-      {/* Enhanced Object Detection Results */}
+      {/* Enhanced Object Detection Results with object type diversity */}
       {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
         <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-          <h4 className="font-medium text-green-800 mb-1">Natural Environment Description</h4>
+          <h4 className="font-medium text-green-800 mb-1">Advanced Object Recognition</h4>
           <p className="text-sm text-green-700 mb-2">
             {objectDetection.lastDetection.environmentContext}
           </p>
           <div className="flex flex-wrap gap-2 mb-2">
-            {objectDetection.lastDetection.objects.slice(0, 5).map((obj, index) => (
-              <Badge key={index} variant="outline" className="text-xs bg-green-100">
-                {obj.name} ({Math.round(obj.confidence * 100)}%) 
-                {obj.persistenceCount > 1 && ` ×${obj.persistenceCount}`}
-              </Badge>
-            ))}
+            {objectDetection.lastDetection.objects
+              .sort((a, b) => b.confidence - a.confidence)
+              .slice(0, 6)
+              .map((obj, index) => (
+                <Badge key={index} variant="outline" className="text-xs bg-green-100">
+                  {obj.name} ({Math.round(obj.confidence * 100)}%) 
+                  {obj.persistenceCount > 1 && ` ×${obj.persistenceCount}`}
+                </Badge>
+              ))}
           </div>
           <p className="text-xs text-green-600">
             {objectDetection.lastDetection.reasoning}
