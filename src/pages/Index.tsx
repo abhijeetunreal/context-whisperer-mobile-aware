@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Eye, Shield, Settings, Zap, BookOpen, Coffee, Users, Microscope, Car, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import ContextCard from '@/components/ContextCard';
 import PrivacyControls from '@/components/PrivacyControls';
 import SuggestionPanel from '@/components/SuggestionPanel';
+import CameraFeed from '@/components/CameraFeed';
 
 const Index = () => {
   const [isActive, setIsActive] = useState(false);
@@ -15,127 +16,119 @@ const Index = () => {
   const [suggestions, setSuggestions] = useState([]);
   const [privacyMode, setPrivacyMode] = useState('balanced');
 
-  // Simulated contexts with rich data
-  const contexts = [
-    {
+  // Context mapping with rich data
+  const contextMapping = {
+    'office': {
       id: 'office',
-      name: 'Office Meeting',
+      name: 'Office Environment',
       icon: Users,
-      description: 'Conference room with presentation setup',
-      confidence: 0.94,
+      description: 'Professional workspace detected',
       suggestions: [
-        'Meeting agenda template for product review',
         'Enable focus mode to minimize distractions',
+        'Check your calendar for upcoming meetings',
         'Set reminder to follow up on action items'
       ],
       color: 'from-blue-400 to-blue-600'
     },
-    {
-      id: 'coffee',
-      name: 'Coffee Shop',
+    'outdoor': {
+      id: 'outdoor',
+      name: 'Outdoor Scene',
       icon: Coffee,
-      description: 'Casual workspace environment',
-      confidence: 0.87,
+      description: 'Outdoor environment detected',
       suggestions: [
-        'Switch to noise-canceling mode for better focus',
-        'Suggested playlist: Ambient Focus',
-        'Nearby wifi networks with good signal'
-      ],
-      color: 'from-amber-400 to-orange-500'
-    },
-    {
-      id: 'reading',
-      name: 'Reading Session',
-      icon: BookOpen,
-      description: 'Focused on physical book for 45 minutes',
-      confidence: 0.91,
-      suggestions: [
-        'Would you like me to research related topics?',
-        'Set a reading break reminder in 15 minutes',
-        'Create notes section for key insights'
+        'Weather update for your location',
+        'Nearby points of interest',
+        'Outdoor activity suggestions'
       ],
       color: 'from-green-400 to-emerald-600'
     },
-    {
-      id: 'lab',
-      name: 'Laboratory',
-      icon: Microscope,
-      description: 'Research lab with specialized equipment',
-      confidence: 0.96,
+    'reading': {
+      id: 'reading',
+      name: 'Reading Area',
+      icon: BookOpen,
+      description: 'Reading or study environment',
       suggestions: [
-        'Safety protocol checklist for current equipment',
-        'Log experiment parameters automatically',
-        'Reference materials for current procedure'
+        'Set a reading break reminder in 15 minutes',
+        'Create notes section for key insights',
+        'Adjust screen brightness for better reading'
       ],
       color: 'from-purple-400 to-violet-600'
     },
-    {
-      id: 'driving',
-      name: 'Driving',
-      icon: Car,
-      description: 'Vehicle interior detected',
-      confidence: 0.89,
+    'meeting': {
+      id: 'meeting',
+      name: 'Meeting Space',
+      icon: Users,
+      description: 'Meeting or conference setup',
       suggestions: [
-        'Switch to hands-free mode',
-        'Traffic update for your usual route',
-        'Suggest podcast based on drive time'
-      ],
-      color: 'from-red-400 to-pink-500'
-    },
-    {
-      id: 'home',
-      name: 'Home Office',
-      icon: Home,
-      description: 'Personal workspace setup',
-      confidence: 0.85,
-      suggestions: [
-        'Review today\'s schedule and priorities',
-        'Adjust lighting for optimal productivity',
-        'Suggest break activities based on time of day'
+        'Meeting agenda template available',
+        'Enable presentation mode',
+        'Mute notifications during meeting'
       ],
       color: 'from-indigo-400 to-purple-500'
+    },
+    'low-light': {
+      id: 'low-light',
+      name: 'Low Light Environment',
+      icon: Home,
+      description: 'Dimly lit space detected',
+      suggestions: [
+        'Adjust display brightness automatically',
+        'Enable dark mode for better visibility',
+        'Suggest optimal lighting for current activity'
+      ],
+      color: 'from-slate-400 to-slate-600'
+    },
+    'general': {
+      id: 'general',
+      name: 'General Environment',
+      icon: Eye,
+      description: 'Standard environment detected',
+      suggestions: [
+        'Context-aware suggestions will appear here',
+        'Optimize settings based on surroundings',
+        'Personalized recommendations available'
+      ],
+      color: 'from-gray-400 to-gray-600'
     }
-  ];
-
-  // Simulate context detection
-  useEffect(() => {
-    if (!isActive) return;
-
-    const interval = setInterval(() => {
-      const randomContext = contexts[Math.floor(Math.random() * contexts.length)];
-      
-      // Only update if context actually changed
-      if (!currentContext || currentContext.id !== randomContext.id) {
-        setCurrentContext(randomContext);
-        setSuggestions(randomContext.suggestions);
-        
-        // Add to history
-        setContextHistory(prev => [
-          {
-            ...randomContext,
-            timestamp: new Date(),
-            duration: Math.floor(Math.random() * 60) + 5 // 5-65 minutes
-          },
-          ...prev.slice(0, 9) // Keep last 10 entries
-        ]);
-      }
-    }, 8000); // Change context every 8 seconds for demo
-
-    return () => clearInterval(interval);
-  }, [isActive, currentContext]);
+  };
 
   const handleToggleActive = () => {
     setIsActive(!isActive);
     if (!isActive) {
-      // Start with a random context
-      const randomContext = contexts[Math.floor(Math.random() * contexts.length)];
-      setCurrentContext(randomContext);
-      setSuggestions(randomContext.suggestions);
+      console.log('Starting Ambient Context Engine...');
     } else {
+      console.log('Stopping Ambient Context Engine...');
       setCurrentContext(null);
       setSuggestions([]);
     }
   };
+
+  const handleContextDetected = useCallback((detectedContext) => {
+    console.log('Context detected in main app:', detectedContext);
+    
+    // Map detected context to our rich context data
+    const contextData = contextMapping[detectedContext.id] || contextMapping['general'];
+    const enrichedContext = {
+      ...contextData,
+      confidence: detectedContext.confidence,
+      timestamp: detectedContext.timestamp
+    };
+
+    // Only update if context actually changed
+    if (!currentContext || currentContext.id !== enrichedContext.id) {
+      setCurrentContext(enrichedContext);
+      setSuggestions(enrichedContext.suggestions);
+      
+      // Add to history
+      setContextHistory(prev => [
+        {
+          ...enrichedContext,
+          duration: Math.floor(Math.random() * 60) + 5 // 5-65 minutes
+        },
+        ...prev.slice(0, 9) // Keep last 10 entries
+      ]);
+    }
+  }, [currentContext]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -154,8 +147,8 @@ const Index = () => {
             </h1>
           </div>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            AI-powered situational awareness that provides proactive, context-aware suggestions 
-            without needing prompts. Privacy-first ambient intelligence.
+            AI-powered situational awareness using real-time camera analysis. 
+            Privacy-first ambient intelligence with on-device processing.
           </p>
         </div>
 
@@ -191,7 +184,15 @@ const Index = () => {
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Current Context - Main Display */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Camera Feed */}
+            <CameraFeed 
+              isActive={isActive}
+              onToggle={handleToggleActive}
+              onContextDetected={handleContextDetected}
+            />
+
+            {/* Context Display */}
             {currentContext ? (
               <ContextCard 
                 context={currentContext}
@@ -201,26 +202,24 @@ const Index = () => {
               <Card className="p-12 text-center border-2 border-dashed border-slate-300">
                 <Eye className="w-16 h-16 text-slate-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-slate-700 mb-2">
-                  Ambient Context Engine Inactive
+                  Waiting for Context Detection
                 </h3>
                 <p className="text-slate-500 mb-6">
-                  Activate ACE to begin ambient situational awareness and receive proactive suggestions.
+                  Activate the camera to begin real-time ambient context analysis and receive proactive suggestions.
                 </p>
                 <Button onClick={handleToggleActive} className="bg-blue-500 hover:bg-blue-600">
                   <Zap className="w-4 h-4 mr-2" />
-                  Start Context Detection
+                  Start Camera & Detection
                 </Button>
               </Card>
             )}
 
             {/* Suggestions Panel */}
-            {suggestions.length > 0 && (
-              <div className="mt-6">
-                <SuggestionPanel 
-                  suggestions={suggestions}
-                  context={currentContext}
-                />
-              </div>
+            {suggestions.length > 0 && currentContext && (
+              <SuggestionPanel 
+                suggestions={suggestions}
+                context={currentContext}
+              />
             )}
           </div>
 
@@ -246,7 +245,7 @@ const Index = () => {
                           {context.name}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {context.duration}m ago
+                          {Math.round(context.confidence * 100)}% confidence
                         </p>
                       </div>
                     </div>
@@ -267,9 +266,10 @@ const Index = () => {
               </h3>
               <div className="space-y-2 text-sm text-blue-700">
                 <p>• All processing happens on-device</p>
-                <p>• No images stored or transmitted</p>
-                <p>• Anonymized, low-resolution analysis only</p>
+                <p>• Camera feed never stored or transmitted</p>
+                <p>• Real-time analysis with immediate disposal</p>
                 <p>• Full control over activation and data</p>
+                <p>• Clear visual indicators when active</p>
               </div>
             </Card>
           </div>
