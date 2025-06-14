@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,34 +20,54 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 }) => {
   const camera = useCamera();
   const contextDetection = useContextDetection();
+  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Start/stop camera based on isActive prop
   useEffect(() => {
     if (isActive && !camera.isActive) {
       camera.startCamera();
-      contextDetection.startDetection();
     } else if (!isActive && camera.isActive) {
       camera.stopCamera();
-      contextDetection.stopDetection();
     }
   }, [isActive]);
 
-  // Process frames for context detection
+  // Handle continuous context detection every 2 seconds
   useEffect(() => {
     if (camera.isActive && camera.videoRef.current) {
-      const interval = setInterval(() => {
-        if (camera.videoRef.current) {
+      console.log('Starting context detection interval...');
+      
+      // Clear any existing interval
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
+
+      // Start new detection interval
+      detectionIntervalRef.current = setInterval(() => {
+        if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
+          console.log('Processing frame for context detection...');
           contextDetection.processFrame(camera.videoRef.current);
         }
-      }, 3000);
+      }, 2000); // Every 2 seconds
 
-      return () => clearInterval(interval);
+      return () => {
+        if (detectionIntervalRef.current) {
+          clearInterval(detectionIntervalRef.current);
+          detectionIntervalRef.current = null;
+        }
+      };
+    } else {
+      // Stop detection when camera is not active
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
+      }
     }
   }, [camera.isActive, contextDetection.processFrame]);
 
   // Pass detected context to parent
   useEffect(() => {
     if (contextDetection.detectedContext) {
+      console.log('Context detected, passing to parent:', contextDetection.detectedContext);
       onContextDetected(contextDetection.detectedContext);
     }
   }, [contextDetection.detectedContext, onContextDetected]);
@@ -80,14 +100,14 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           <div>
             <h3 className="font-semibold text-slate-800">Camera Feed</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Live context detection active' : 'Camera inactive'}
+              {camera.isActive ? 'Live context detection every 2 seconds' : 'Camera inactive'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {contextDetection.isProcessing && (
             <Badge variant="outline" className="flex items-center gap-1">
-              <Eye className="w-3 h-3" />
+              <Eye className="w-3 h-3 animate-pulse" />
               Analyzing
             </Badge>
           )}
@@ -146,12 +166,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
       {contextDetection.detectedContext && (
         <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-medium text-blue-800 mb-1">Current Context</h4>
+          <h4 className="font-medium text-blue-800 mb-1">Latest Context</h4>
           <p className="text-sm text-blue-700">
             {contextDetection.detectedContext.name}
           </p>
           <p className="text-xs text-blue-600 mt-1">
-            Detected at {contextDetection.detectedContext.timestamp.toLocaleTimeString()}
+            Last detected: {contextDetection.detectedContext.timestamp.toLocaleTimeString()}
           </p>
         </div>
       )}

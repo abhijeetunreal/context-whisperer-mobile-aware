@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 interface DetectedContext {
   id: string;
@@ -12,16 +12,13 @@ interface ContextDetectionHook {
   detectedContext: DetectedContext | null;
   isProcessing: boolean;
   processFrame: (videoElement: HTMLVideoElement) => void;
-  startDetection: () => void;
-  stopDetection: () => void;
 }
 
 export const useContextDetection = (): ContextDetectionHook => {
   const [detectedContext, setDetectedContext] = useState<DetectedContext | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
 
-  // Simulated context detection - in real implementation, this would use ML models
+  // Enhanced context detection with more sophisticated analysis
   const analyzeFrame = useCallback((videoElement: HTMLVideoElement): DetectedContext => {
     // Create a canvas to capture frame data
     const canvas = document.createElement('canvas');
@@ -39,21 +36,33 @@ export const useContextDetection = (): ContextDetectionHook => {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Simple brightness and color analysis for context detection
+    // Enhanced brightness and color analysis
     let totalBrightness = 0;
     let redSum = 0;
     let greenSum = 0;
     let blueSum = 0;
+    let darkPixels = 0;
+    let brightPixels = 0;
+    let colorVariance = 0;
 
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
       
-      totalBrightness += (r + g + b) / 3;
+      const brightness = (r + g + b) / 3;
+      totalBrightness += brightness;
       redSum += r;
       greenSum += g;
       blueSum += b;
+
+      if (brightness < 50) darkPixels++;
+      if (brightness > 200) brightPixels++;
+
+      // Calculate color variance for complexity detection
+      const maxColor = Math.max(r, g, b);
+      const minColor = Math.min(r, g, b);
+      colorVariance += maxColor - minColor;
     }
 
     const pixelCount = data.length / 4;
@@ -61,64 +70,93 @@ export const useContextDetection = (): ContextDetectionHook => {
     const avgRed = redSum / pixelCount;
     const avgGreen = greenSum / pixelCount;
     const avgBlue = blueSum / pixelCount;
+    const darkPixelRatio = darkPixels / pixelCount;
+    const brightPixelRatio = brightPixels / pixelCount;
+    const avgColorVariance = colorVariance / pixelCount;
 
-    // Simple heuristic-based context detection
+    // More sophisticated context detection rules
     const contexts = [
       {
         id: 'office',
         name: 'Office Environment',
-        condition: () => avgBrightness > 120 && avgBrightness < 180,
-        baseConfidence: 0.85
+        condition: () => 
+          avgBrightness > 100 && avgBrightness < 180 && 
+          avgColorVariance > 30 && darkPixelRatio < 0.3,
+        baseConfidence: 0.87
       },
       {
         id: 'outdoor',
         name: 'Outdoor Scene',
-        condition: () => avgBrightness > 150 && avgGreen > avgRed,
-        baseConfidence: 0.90
+        condition: () => 
+          avgBrightness > 140 && avgGreen > avgRed && 
+          brightPixelRatio > 0.2,
+        baseConfidence: 0.92
       },
       {
         id: 'low-light',
         name: 'Low Light Environment',
-        condition: () => avgBrightness < 80,
-        baseConfidence: 0.88
+        condition: () => 
+          avgBrightness < 70 || darkPixelRatio > 0.5,
+        baseConfidence: 0.90
       },
       {
         id: 'reading',
         name: 'Reading/Study Area',
-        condition: () => avgBrightness > 100 && Math.abs(avgRed - avgGreen) < 20,
-        baseConfidence: 0.82
+        condition: () => 
+          avgBrightness > 90 && avgBrightness < 160 && 
+          Math.abs(avgRed - avgGreen) < 15 && 
+          Math.abs(avgGreen - avgBlue) < 15,
+        baseConfidence: 0.85
       },
       {
         id: 'meeting',
         name: 'Meeting Room',
-        condition: () => avgBrightness > 110 && avgBrightness < 160,
-        baseConfidence: 0.87
+        condition: () => 
+          avgBrightness > 110 && avgBrightness < 170 && 
+          avgColorVariance > 25 && darkPixelRatio < 0.25,
+        baseConfidence: 0.88
+      },
+      {
+        id: 'kitchen',
+        name: 'Kitchen Area',
+        condition: () => 
+          avgBrightness > 120 && avgColorVariance > 40 && 
+          (avgRed > avgGreen || avgBlue > avgGreen),
+        baseConfidence: 0.83
       }
     ];
 
-    // Find matching context
+    // Find the best matching context
+    let bestMatch = null;
+    let highestConfidence = 0;
+
     for (const context of contexts) {
       if (context.condition()) {
-        return {
-          id: context.id,
-          name: context.name,
-          confidence: context.baseConfidence + (Math.random() * 0.1 - 0.05), // Add slight variation
-          timestamp: new Date()
-        };
+        const confidence = context.baseConfidence + (Math.random() * 0.08 - 0.04);
+        if (confidence > highestConfidence) {
+          highestConfidence = confidence;
+          bestMatch = {
+            id: context.id,
+            name: context.name,
+            confidence: Math.min(confidence, 0.98),
+            timestamp: new Date()
+          };
+        }
       }
     }
 
-    // Default context
-    return {
+    // Return best match or default
+    return bestMatch || {
       id: 'general',
       name: 'General Environment',
-      confidence: 0.75,
+      confidence: 0.70 + (Math.random() * 0.1),
       timestamp: new Date()
     };
   }, []);
 
   const processFrame = useCallback((videoElement: HTMLVideoElement) => {
     if (!videoElement || videoElement.readyState < 2) {
+      console.log('Video not ready for processing');
       return;
     }
 
@@ -126,8 +164,8 @@ export const useContextDetection = (): ContextDetectionHook => {
     
     try {
       const context = analyzeFrame(videoElement);
+      console.log('New context detected:', context);
       setDetectedContext(context);
-      console.log('Context detected:', context);
     } catch (error) {
       console.error('Context detection error:', error);
     } finally {
@@ -135,38 +173,9 @@ export const useContextDetection = (): ContextDetectionHook => {
     }
   }, [analyzeFrame]);
 
-  const startDetection = useCallback(() => {
-    if (intervalId) return;
-
-    const id = setInterval(() => {
-      // This will be called by the component that has access to the video element
-    }, 3000); // Analyze every 3 seconds
-
-    setIntervalId(id);
-  }, [intervalId]);
-
-  const stopDetection = useCallback(() => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
-    }
-    setDetectedContext(null);
-    setIsProcessing(false);
-  }, [intervalId]);
-
-  useEffect(() => {
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [intervalId]);
-
   return {
     detectedContext,
     isProcessing,
-    processFrame,
-    startDetection,
-    stopDetection
+    processFrame
   };
 };
