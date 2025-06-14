@@ -8,6 +8,7 @@ import ContextCard from '@/components/ContextCard';
 import PrivacyControls from '@/components/PrivacyControls';
 import SuggestionPanel from '@/components/SuggestionPanel';
 import CameraFeed from '@/components/CameraFeed';
+import AccessibilityControls from '@/components/AccessibilityControls';
 
 const Index = () => {
   const [isActive, setIsActive] = useState(false);
@@ -15,6 +16,10 @@ const Index = () => {
   const [contextHistory, setContextHistory] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [privacyMode, setPrivacyMode] = useState('balanced');
+  
+  // Accessibility states
+  const [apiKey, setApiKey] = useState('');
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   // Context mapping with rich data
   const contextMapping = {
@@ -78,6 +83,18 @@ const Index = () => {
       ],
       color: 'from-slate-400 to-slate-600'
     },
+    'kitchen': {
+      id: 'kitchen',
+      name: 'Kitchen Area',
+      icon: Coffee,
+      description: 'Kitchen environment detected',
+      suggestions: [
+        'Recipe suggestions based on visible ingredients',
+        'Timer for cooking activities',
+        'Safety reminders for kitchen tasks'
+      ],
+      color: 'from-orange-400 to-red-500'
+    },
     'general': {
       id: 'general',
       name: 'General Environment',
@@ -111,7 +128,9 @@ const Index = () => {
     const enrichedContext = {
       ...contextData,
       confidence: detectedContext.confidence,
-      timestamp: detectedContext.timestamp
+      timestamp: detectedContext.timestamp,
+      objects: detectedContext.objects,
+      description: detectedContext.description
     };
 
     // Only update if context actually changed
@@ -130,6 +149,11 @@ const Index = () => {
     }
   }, [currentContext]);
 
+  const handleStopSpeaking = () => {
+    // This would be handled by the text-to-speech hook in CameraFeed
+    console.log('Stop speaking requested');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <div className="container mx-auto px-4 py-8">
@@ -147,7 +171,7 @@ const Index = () => {
             </h1>
           </div>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            AI-powered situational awareness using real-time camera analysis. 
+            AI-powered situational awareness with voice descriptions for accessibility. 
             Privacy-first ambient intelligence with on-device processing.
           </p>
         </div>
@@ -185,11 +209,23 @@ const Index = () => {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Current Context - Main Display */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Accessibility Controls */}
+            <AccessibilityControls
+              apiKey={apiKey}
+              setApiKey={setApiKey}
+              voiceEnabled={voiceEnabled}
+              setVoiceEnabled={setVoiceEnabled}
+              isSpeaking={false} // This would come from the text-to-speech hook
+              onStopSpeaking={handleStopSpeaking}
+            />
+
             {/* Camera Feed */}
             <CameraFeed 
               isActive={isActive}
               onToggle={handleToggleActive}
               onContextDetected={handleContextDetected}
+              voiceEnabled={voiceEnabled}
+              apiKey={apiKey}
             />
 
             {/* Context Display */}
@@ -205,7 +241,7 @@ const Index = () => {
                   Waiting for Context Detection
                 </h3>
                 <p className="text-slate-500 mb-6">
-                  Activate the camera to begin real-time ambient context analysis and receive proactive suggestions.
+                  Activate the camera to begin real-time ambient context analysis with voice descriptions for accessibility.
                 </p>
                 <Button onClick={handleToggleActive} className="bg-blue-500 hover:bg-blue-600">
                   <Zap className="w-4 h-4 mr-2" />
@@ -262,14 +298,15 @@ const Index = () => {
             <Card className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
               <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-blue-800">
                 <Shield className="w-5 h-5" />
-                Privacy First
+                Privacy & Accessibility
               </h3>
               <div className="space-y-2 text-sm text-blue-700">
                 <p>• All processing happens on-device</p>
                 <p>• Camera feed never stored or transmitted</p>
                 <p>• Real-time analysis with immediate disposal</p>
+                <p>• Voice descriptions for visual accessibility</p>
                 <p>• Full control over activation and data</p>
-                <p>• Clear visual indicators when active</p>
+                <p>• Clear visual and audio indicators when active</p>
               </div>
             </Card>
           </div>

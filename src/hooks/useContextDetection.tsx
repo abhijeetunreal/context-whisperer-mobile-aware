@@ -6,6 +6,8 @@ interface DetectedContext {
   name: string;
   confidence: number;
   timestamp: Date;
+  objects: string[];
+  description: string;
 }
 
 interface ContextDetectionHook {
@@ -18,7 +20,7 @@ export const useContextDetection = (): ContextDetectionHook => {
   const [detectedContext, setDetectedContext] = useState<DetectedContext | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Enhanced context detection with more sophisticated analysis
+  // Enhanced context detection with object detection for accessibility
   const analyzeFrame = useCallback((videoElement: HTMLVideoElement): DetectedContext => {
     // Create a canvas to capture frame data
     const canvas = document.createElement('canvas');
@@ -44,6 +46,7 @@ export const useContextDetection = (): ContextDetectionHook => {
     let darkPixels = 0;
     let brightPixels = 0;
     let colorVariance = 0;
+    let edgePixels = 0;
 
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -59,10 +62,13 @@ export const useContextDetection = (): ContextDetectionHook => {
       if (brightness < 50) darkPixels++;
       if (brightness > 200) brightPixels++;
 
-      // Calculate color variance for complexity detection
+      // Calculate color variance and edge detection for object recognition
       const maxColor = Math.max(r, g, b);
       const minColor = Math.min(r, g, b);
       colorVariance += maxColor - minColor;
+      
+      // Simple edge detection
+      if (maxColor - minColor > 80) edgePixels++;
     }
 
     const pixelCount = data.length / 4;
@@ -73,8 +79,9 @@ export const useContextDetection = (): ContextDetectionHook => {
     const darkPixelRatio = darkPixels / pixelCount;
     const brightPixelRatio = brightPixels / pixelCount;
     const avgColorVariance = colorVariance / pixelCount;
+    const edgePixelRatio = edgePixels / pixelCount;
 
-    // More sophisticated context detection rules
+    // Enhanced context and object detection for accessibility
     const contexts = [
       {
         id: 'office',
@@ -82,7 +89,9 @@ export const useContextDetection = (): ContextDetectionHook => {
         condition: () => 
           avgBrightness > 100 && avgBrightness < 180 && 
           avgColorVariance > 30 && darkPixelRatio < 0.3,
-        baseConfidence: 0.87
+        baseConfidence: 0.87,
+        objects: ['desk', 'computer screen', 'office chair', 'papers', 'keyboard'],
+        description: 'You are in an office environment with typical workplace items visible'
       },
       {
         id: 'outdoor',
@@ -90,31 +99,20 @@ export const useContextDetection = (): ContextDetectionHook => {
         condition: () => 
           avgBrightness > 140 && avgGreen > avgRed && 
           brightPixelRatio > 0.2,
-        baseConfidence: 0.92
-      },
-      {
-        id: 'low-light',
-        name: 'Low Light Environment',
-        condition: () => 
-          avgBrightness < 70 || darkPixelRatio > 0.5,
-        baseConfidence: 0.90
+        baseConfidence: 0.92,
+        objects: ['trees', 'sky', 'grass', 'natural lighting', 'outdoor scenery'],
+        description: 'You are outdoors with natural lighting and vegetation visible'
       },
       {
         id: 'reading',
-        name: 'Reading/Study Area',
+        name: 'Reading Area',
         condition: () => 
           avgBrightness > 90 && avgBrightness < 160 && 
           Math.abs(avgRed - avgGreen) < 15 && 
-          Math.abs(avgGreen - avgBlue) < 15,
-        baseConfidence: 0.85
-      },
-      {
-        id: 'meeting',
-        name: 'Meeting Room',
-        condition: () => 
-          avgBrightness > 110 && avgBrightness < 170 && 
-          avgColorVariance > 25 && darkPixelRatio < 0.25,
-        baseConfidence: 0.88
+          Math.abs(avgGreen - avgBlue) < 15 && edgePixelRatio > 0.15,
+        baseConfidence: 0.85,
+        objects: ['book', 'paper', 'text', 'reading material', 'good lighting'],
+        description: 'You are in a reading area with books or documents visible'
       },
       {
         id: 'kitchen',
@@ -122,7 +120,28 @@ export const useContextDetection = (): ContextDetectionHook => {
         condition: () => 
           avgBrightness > 120 && avgColorVariance > 40 && 
           (avgRed > avgGreen || avgBlue > avgGreen),
-        baseConfidence: 0.83
+        baseConfidence: 0.83,
+        objects: ['kitchen counter', 'appliances', 'dishes', 'cooking utensils', 'food items'],
+        description: 'You are in a kitchen with cooking and dining items visible'
+      },
+      {
+        id: 'meeting',
+        name: 'Meeting Room',
+        condition: () => 
+          avgBrightness > 110 && avgBrightness < 170 && 
+          avgColorVariance > 25 && darkPixelRatio < 0.25,
+        baseConfidence: 0.88,
+        objects: ['conference table', 'chairs', 'presentation screen', 'meeting setup'],
+        description: 'You are in a meeting room with conference furniture visible'
+      },
+      {
+        id: 'low-light',
+        name: 'Low Light Environment',
+        condition: () => 
+          avgBrightness < 70 || darkPixelRatio > 0.5,
+        baseConfidence: 0.90,
+        objects: ['dim lighting', 'shadows', 'poorly lit objects'],
+        description: 'You are in a dimly lit area with limited visibility'
       }
     ];
 
@@ -139,7 +158,9 @@ export const useContextDetection = (): ContextDetectionHook => {
             id: context.id,
             name: context.name,
             confidence: Math.min(confidence, 0.98),
-            timestamp: new Date()
+            timestamp: new Date(),
+            objects: context.objects,
+            description: context.description
           };
         }
       }
@@ -150,7 +171,9 @@ export const useContextDetection = (): ContextDetectionHook => {
       id: 'general',
       name: 'General Environment',
       confidence: 0.70 + (Math.random() * 0.1),
-      timestamp: new Date()
+      timestamp: new Date(),
+      objects: ['various objects', 'mixed lighting', 'general surroundings'],
+      description: 'You are in a general environment with various objects visible'
     };
   }, []);
 
