@@ -29,8 +29,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const objectDetection = useObjectDetection();
   const textToSpeech = useTextToSpeech({ apiKey });
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const contextAnalysisIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSpokenObjectsRef = useRef<string | null>(null);
+  const contextIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSpokenContextRef = useRef<string>('');
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [isAnalyzingContext, setIsAnalyzingContext] = useState(false);
@@ -63,74 +63,100 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
   }, [isActive]);
 
-  // Real-time object detection (every 500ms for smooth tracking)
+  // Cleanup intervals when component unmounts or camera stops
   useEffect(() => {
-    if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting real-time object tracking...');
-      
+    return () => {
       if (detectionIntervalRef.current) {
         clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
       }
+      if (contextIntervalRef.current) {
+        clearInterval(contextIntervalRef.current);
+        contextIntervalRef.current = null;
+      }
+    };
+  }, []);
 
-      // Real-time object detection for tracking
+  // Real-time object detection
+  useEffect(() => {
+    // Clear existing intervals first
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+
+    if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
+      console.log('Starting real-time object detection...');
+      
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
-          await objectDetection.detectObjects(camera.videoRef.current);
+          try {
+            await objectDetection.detectObjects(camera.videoRef.current);
+          } catch (error) {
+            console.error('Object detection error:', error);
+          }
         }
-      }, 500); // 500ms for smooth real-time tracking
-
-      return () => {
-        if (detectionIntervalRef.current) {
-          clearInterval(detectionIntervalRef.current);
-          detectionIntervalRef.current = null;
-        }
-      };
+      }, 500);
     }
-  }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Context analysis and voice descriptions (every 5 seconds)
-  useEffect(() => {
-    if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting context analysis and voice descriptions...');
-      
-      if (contextAnalysisIntervalRef.current) {
-        clearInterval(contextAnalysisIntervalRef.current);
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
       }
+    };
+  }, [camera.isActive, objectDetection.isReady]);
 
-      // Context analysis and voice announcements
-      contextAnalysisIntervalRef.current = setInterval(async () => {
+  // Context analysis and voice descriptions
+  useEffect(() => {
+    // Clear existing context interval first
+    if (contextIntervalRef.current) {
+      clearInterval(contextIntervalRef.current);
+      contextIntervalRef.current = null;
+    }
+
+    if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
+      console.log('Starting context analysis...');
+      
+      contextIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
           setIsAnalyzingContext(true);
           
-          // Process context for suggestions
-          contextDetection.processFrame(camera.videoRef.current);
-          
-          // Get current detection for voice description
-          const objectResult = objectDetection.lastDetection;
-          
-          // Voice announcements for accessibility
-          if (voiceEnabled && objectResult && !textToSpeech.isSpeaking) {
-            const contextDescription = `Environment analysis: ${objectResult.environmentContext}`;
+          try {
+            // Process context for environment analysis
+            contextDetection.processFrame(camera.videoRef.current);
             
-            if (lastSpokenObjectsRef.current !== contextDescription && objectResult.objects.length > 0) {
-              textToSpeech.speak(contextDescription);
-              lastSpokenObjectsRef.current = contextDescription;
-              console.log('Speaking context:', contextDescription);
+            // Get current detection for voice description
+            const objectResult = objectDetection.lastDetection;
+            
+            if (objectResult && objectResult.environmentContext) {
+              // Voice announcements for accessibility
+              if (voiceEnabled && !textToSpeech.isSpeaking) {
+                const contextDescription = objectResult.environmentContext;
+                
+                if (lastSpokenContextRef.current !== contextDescription && objectResult.objects.length > 0) {
+                  textToSpeech.speak(contextDescription);
+                  lastSpokenContextRef.current = contextDescription;
+                  console.log('Speaking context:', contextDescription);
+                }
+              }
             }
+          } catch (error) {
+            console.error('Context analysis error:', error);
+          } finally {
+            setIsAnalyzingContext(false);
           }
-          
-          setIsAnalyzingContext(false);
         }
-      }, 5000); // 5 seconds for context analysis
-
-      return () => {
-        if (contextAnalysisIntervalRef.current) {
-          clearInterval(contextAnalysisIntervalRef.current);
-          contextAnalysisIntervalRef.current = null;
-        }
-      };
+      }, 5000);
     }
-  }, [camera.isActive, objectDetection.isReady, objectDetection.lastDetection, contextDetection.processFrame, voiceEnabled, textToSpeech]);
+
+    return () => {
+      if (contextIntervalRef.current) {
+        clearInterval(contextIntervalRef.current);
+        contextIntervalRef.current = null;
+      }
+    };
+  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking]);
 
   // Pass detected context to parent
   useEffect(() => {
@@ -182,7 +208,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {isAnalyzingContext && (
             <Badge variant="outline" className="flex items-center gap-1 bg-blue-50">
               <Eye className="w-3 h-3 animate-pulse text-blue-600" />
-              Analyzing Context
+              Analyzing
             </Badge>
           )}
           {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
