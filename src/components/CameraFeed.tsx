@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -149,8 +148,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
               await textToSpeech.speak(
                 objectResult.environmentContext, 
                 currentObjects, 
-                objectResult.reasoning,
-                false
+                objectResult.reasoning
               );
             }
           } catch (error) {
