@@ -171,7 +171,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && voiceEnabled && (objectDetection.isReady || textDetection.isReady)) {
-      console.log('🎤 Starting smart voice descriptions with text detection...');
+      console.log('🎤 Starting smart voice descriptions with enhanced text reading...');
       
       const triggerSmartVoiceDescription = async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
@@ -180,15 +180,17 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           try {
             // Check for text first - text detection takes priority
             const hasText = textDetection.lastDetection?.hasText || false;
+            const detectedTextContent = textDetection.lastDetection?.readableText || '';
             
             if (hasText) {
-              // If text is detected, only speak about text
-              console.log('🎤 Text detected, speaking about text...');
+              // If text is detected, read the actual text content
+              console.log('🎤 Big text detected, reading content:', detectedTextContent);
               await textToSpeech.speak(
                 'Text detected', 
                 [], 
                 'Text analysis',
-                hasText
+                hasText,
+                detectedTextContent
               );
             } else {
               // If no text, proceed with object detection
@@ -458,22 +460,29 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         </div>
       )}
 
-      {/* Text Detection Results */}
+      {/* Enhanced Text Detection Results with readable content */}
       {textDetection.lastDetection && textDetection.lastDetection.hasText && (
         <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-          <h4 className="font-medium text-purple-800 mb-1">Text Detection Active</h4>
+          <h4 className="font-medium text-purple-800 mb-1">Big Text Detected & Read</h4>
           <p className="text-sm text-purple-700 mb-2">
-            Text or writing detected in the camera view
+            Large text found and analyzed in the camera view
           </p>
+          {textDetection.lastDetection.readableText && (
+            <div className="mb-2 p-2 bg-purple-100 rounded">
+              <p className="text-sm font-medium text-purple-800">
+                Detected Text: "{textDetection.lastDetection.readableText}"
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 mb-2">
             {textDetection.lastDetection.textRegions.slice(0, 3).map((region, index) => (
               <Badge key={index} variant="outline" className="text-xs bg-purple-100">
-                Text Region ({Math.round(region.confidence * 100)}%)
+                {region.boundingBox.width}×{region.boundingBox.height}px ({Math.round(region.confidence * 100)}%)
               </Badge>
             ))}
           </div>
           <p className="text-xs text-purple-600">
-            {textDetection.lastDetection.textRegions.length} text regions detected
+            {textDetection.lastDetection.textRegions.length} large text regions detected
           </p>
         </div>
       )}

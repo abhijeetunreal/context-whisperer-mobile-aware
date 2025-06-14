@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 
 interface TextToSpeechOptions {
@@ -29,7 +28,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     lastTextDetection: 0
   });
 
-  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, hasTextDetected?: boolean): string => {
+  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, hasTextDetected?: boolean, detectedTextContent?: string): string => {
     const now = Date.now();
     const timeSinceLastSpoken = now - environmentStateRef.current.lastSpokenTime;
     const timeSinceLastChange = now - environmentStateRef.current.lastSignificantChange;
@@ -37,9 +36,26 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     const previousObjects = environmentStateRef.current.lastObjects;
     const previousEnvironment = environmentStateRef.current.lastEnvironmentType;
     
-    // Prioritize text detection - only speak if text was recently detected
-    if (hasTextDetected && timeSinceLastText > 8000) {
-      const textDescription = "Text or writing detected in the view.";
+    // Prioritize text detection with actual content - only speak if text was recently detected
+    if (hasTextDetected && timeSinceLastText > 5000) {
+      let textDescription = '';
+      
+      if (detectedTextContent && detectedTextContent.trim() !== '') {
+        // Read the actual detected text
+        if (detectedTextContent.includes('Large text detected')) {
+          textDescription = "Large text visible on screen";
+        } else if (detectedTextContent.includes('Medium text detected')) {
+          textDescription = "Medium size text visible";
+        } else if (detectedTextContent.includes('Text detected')) {
+          textDescription = "Text is visible";
+        } else {
+          // If we have actual text content, read it
+          textDescription = `Text says: ${detectedTextContent}`;
+        }
+      } else {
+        textDescription = "Text is visible on screen";
+      }
+      
       environmentStateRef.current.lastTextDetection = now;
       environmentStateRef.current.lastSpokenTime = now;
       return textDescription;
@@ -150,7 +166,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     return trimmedDescription;
   }, []);
 
-  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string, hasTextDetected?: boolean) => {
+  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string, hasTextDetected?: boolean, detectedTextContent?: string) => {
     if (!text || text.trim() === '') {
       return;
     }
@@ -158,7 +174,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     // Generate smart description that avoids repetition
     let processedText = text;
     if (currentObjects && reasoning !== undefined) {
-      processedText = generateSmartDescription(text, currentObjects, reasoning, hasTextDetected);
+      processedText = generateSmartDescription(text, currentObjects, reasoning, hasTextDetected, detectedTextContent);
     }
 
     // Skip if no meaningful content to speak
@@ -181,7 +197,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       const utterance = new SpeechSynthesisUtterance(processedText);
       
       // Configure for natural speech
-      utterance.rate = 0.9;
+      utterance.rate = 0.85; // Slightly slower for better clarity
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       
