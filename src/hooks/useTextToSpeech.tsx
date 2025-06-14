@@ -13,6 +13,7 @@ interface EnvironmentState {
   spokenPhrases: Set<string>;
   lastSignificantChange: number;
   lastTextDetection: number;
+  lastSpokenText: string;
 }
 
 export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: TextToSpeechOptions) => {
@@ -25,133 +26,105 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     lastSpokenTime: 0,
     spokenPhrases: new Set(),
     lastSignificantChange: 0,
-    lastTextDetection: 0
+    lastTextDetection: 0,
+    lastSpokenText: ''
   });
 
-  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, hasTextDetected?: boolean, detectedTextContent?: string): string => {
+  const generateNaturalDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, hasTextDetected?: boolean, detectedTextContent?: string): string => {
     const now = Date.now();
     const timeSinceLastSpoken = now - environmentStateRef.current.lastSpokenTime;
     const timeSinceLastChange = now - environmentStateRef.current.lastSignificantChange;
     const timeSinceLastText = now - environmentStateRef.current.lastTextDetection;
     const previousObjects = environmentStateRef.current.lastObjects;
-    const previousEnvironment = environmentStateRef.current.lastEnvironmentType;
     
-    // Prioritize text detection with actual content - only speak if text was recently detected
-    if (hasTextDetected && timeSinceLastText > 5000) {
-      let textDescription = '';
-      
-      if (detectedTextContent && detectedTextContent.trim() !== '') {
-        // Read the actual detected text
-        if (detectedTextContent.includes('Large text detected')) {
-          textDescription = "Large text visible on screen";
-        } else if (detectedTextContent.includes('Medium text detected')) {
-          textDescription = "Medium size text visible";
-        } else if (detectedTextContent.includes('Text detected')) {
-          textDescription = "Text is visible";
-        } else {
-          // If we have actual text content, read it
-          textDescription = `Text says: ${detectedTextContent}`;
-        }
-      } else {
-        textDescription = "Text is visible on screen";
+    // Prioritize actual text content - only speak if there's readable text
+    if (hasTextDetected && detectedTextContent && detectedTextContent.trim() !== '') {
+      // Avoid repeating the same text
+      if (detectedTextContent === environmentStateRef.current.lastSpokenText && timeSinceLastText < 8000) {
+        return '';
       }
       
-      environmentStateRef.current.lastTextDetection = now;
-      environmentStateRef.current.lastSpokenTime = now;
-      return textDescription;
+      // Only speak actual readable text content, not descriptions
+      if (!detectedTextContent.includes('detected') && !detectedTextContent.includes('region')) {
+        environmentStateRef.current.lastTextDetection = now;
+        environmentStateRef.current.lastSpokenTime = now;
+        environmentStateRef.current.lastSpokenText = detectedTextContent;
+        return detectedTextContent; // Speak the actual text content
+      }
     }
     
-    // If text is detected, skip other descriptions
+    // Skip environment descriptions if text is detected
     if (hasTextDetected) {
       return '';
     }
     
-    // Detect significant changes
+    // Natural environment descriptions
     const newObjects = currentObjects.filter(obj => !previousObjects.includes(obj));
-    const removedObjects = previousObjects.filter(obj => !currentObjects.includes(obj));
-    const hasSignificantChange = newObjects.length > 0 || removedObjects.length > 0;
+    const hasSignificantChange = newObjects.length > 0;
     
-    // Determine environment type
-    let currentEnvironmentType = 'general';
-    if (currentContext.toLowerCase().includes('kitchen')) currentEnvironmentType = 'kitchen';
-    else if (currentContext.toLowerCase().includes('office')) currentEnvironmentType = 'office';
-    else if (currentContext.toLowerCase().includes('outdoor')) currentEnvironmentType = 'outdoor';
-    else if (currentContext.toLowerCase().includes('room')) currentEnvironmentType = 'indoor';
-    else if (currentContext.toLowerCase().includes('vehicle')) currentEnvironmentType = 'vehicle';
+    // Determine environment naturally
+    let environmentDescription = '';
+    if (currentContext.toLowerCase().includes('kitchen')) {
+      environmentDescription = 'You appear to be in a kitchen area';
+    } else if (currentContext.toLowerCase().includes('office')) {
+      environmentDescription = 'This looks like an office or workspace';
+    } else if (currentContext.toLowerCase().includes('outdoor')) {
+      environmentDescription = 'You are in an outdoor environment';
+    } else if (currentContext.toLowerCase().includes('bedroom') || currentContext.toLowerCase().includes('living')) {
+      environmentDescription = 'This appears to be a living space';
+    } else if (currentContext.toLowerCase().includes('vehicle') || currentContext.toLowerCase().includes('car')) {
+      environmentDescription = 'You are inside a vehicle';
+    }
     
-    const environmentChanged = currentEnvironmentType !== previousEnvironment && previousEnvironment !== '';
+    // Only speak if there's a significant change or enough time has passed
+    if (!hasSignificantChange && timeSinceLastSpoken < 20000) {
+      return '';
+    }
     
     let description = '';
     
-    // Only speak if there's a significant change or enough time has passed
-    if (!hasSignificantChange && !environmentChanged && timeSinceLastSpoken < 15000) {
-      return ''; // Skip repetitive descriptions
-    }
-    
-    // Environment transitions
-    if (environmentChanged) {
-      switch (currentEnvironmentType) {
-        case 'kitchen':
-          description = "Kitchen area detected. ";
-          break;
-        case 'office':
-          description = "Workspace environment detected. ";
-          break;
-        case 'outdoor':
-          description = "Outdoor environment detected. ";
-          break;
-        case 'indoor':
-          description = "Indoor space detected. ";
-          break;
-        case 'vehicle':
-          description = "Vehicle detected. ";
-          break;
-      }
-      environmentStateRef.current.lastSignificantChange = now;
-    }
-    
-    // New objects detection
+    // Natural object descriptions
     if (newObjects.length > 0) {
-      if (newObjects.length === 1) {
-        const obj = newObjects[0];
-        if (obj === 'person') {
-          description += "Person detected. ";
-        } else if (['car', 'truck', 'bus'].includes(obj)) {
-          description += `${obj} detected. `;
-        } else if (['cat', 'dog', 'bird'].includes(obj)) {
-          description += `${obj} detected. `;
-        } else {
-          description += `${obj} detected. `;
-        }
-      } else if (newObjects.length <= 3) {
-        description += `Multiple objects detected: ${newObjects.slice(0, 2).join(', ')}. `;
+      const person = newObjects.find(obj => obj === 'person');
+      const vehicles = newObjects.filter(obj => ['car', 'truck', 'bus', 'motorcycle'].includes(obj));
+      const animals = newObjects.filter(obj => ['cat', 'dog', 'bird'].includes(obj));
+      const furniture = newObjects.filter(obj => ['chair', 'table', 'couch', 'bed'].includes(obj));
+      
+      if (person) {
+        description = 'There is someone nearby';
+      } else if (vehicles.length > 0) {
+        description = vehicles.length === 1 ? `A ${vehicles[0]} is visible` : 'Vehicles are in the area';
+      } else if (animals.length > 0) {
+        description = animals.length === 1 ? `I can see a ${animals[0]}` : 'Animals are present';
+      } else if (furniture.length > 0) {
+        description = 'Furniture is visible in the room';
+      } else if (newObjects.length === 1) {
+        description = `I can see a ${newObjects[0]}`;
       }
+      
       environmentStateRef.current.lastSignificantChange = now;
     }
     
-    // Avoid repetitive fallback phrases
-    if (!description && timeSinceLastChange > 25000 && currentObjects.length > 0) {
-      const dominantObjects = currentObjects.slice(0, 2);
-      if (dominantObjects.includes('person')) {
-        description = "Person in view. ";
-      } else if (dominantObjects.some(obj => ['car', 'truck', 'bus'].includes(obj))) {
-        description = "Vehicle in view. ";
-      } else if (dominantObjects.length > 0) {
-        description = `${dominantObjects[0]} detected. `;
+    // Add environment context naturally
+    if (environmentDescription && timeSinceLastChange > 30000) {
+      if (description) {
+        description = `${environmentDescription}. ${description}`;
+      } else {
+        description = environmentDescription;
       }
     }
     
-    // Check against recently spoken phrases to avoid repetition
+    // Avoid repetitive phrases
     const trimmedDescription = description.trim();
     if (trimmedDescription && !environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
       environmentStateRef.current.spokenPhrases.add(trimmedDescription);
       
       // Clear old phrases periodically
-      if (environmentStateRef.current.spokenPhrases.size > 8) {
+      if (environmentStateRef.current.spokenPhrases.size > 6) {
         environmentStateRef.current.spokenPhrases.clear();
       }
     } else if (environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
-      return ''; // Skip if recently spoken
+      return '';
     }
     
     // Update state
@@ -159,7 +132,6 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       ...environmentStateRef.current,
       lastDescription: trimmedDescription,
       lastObjects: [...currentObjects],
-      lastEnvironmentType: currentEnvironmentType,
       lastSpokenTime: now
     };
     
@@ -171,13 +143,11 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       return;
     }
 
-    // Generate smart description that avoids repetition
     let processedText = text;
     if (currentObjects && reasoning !== undefined) {
-      processedText = generateSmartDescription(text, currentObjects, reasoning, hasTextDetected, detectedTextContent);
+      processedText = generateNaturalDescription(text, currentObjects, reasoning, hasTextDetected, detectedTextContent);
     }
 
-    // Skip if no meaningful content to speak
     if (!processedText || processedText.trim() === '') {
       return;
     }
@@ -185,7 +155,6 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     console.log('🎤 Speaking:', processedText);
     setError(null);
 
-    // Stop any ongoing speech
     if (speechSynthesis.speaking) {
       speechSynthesis.cancel();
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -196,12 +165,10 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     try {
       const utterance = new SpeechSynthesisUtterance(processedText);
       
-      // Configure for natural speech
-      utterance.rate = 0.85; // Slightly slower for better clarity
+      utterance.rate = 0.9;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       
-      // Get available voices
       let voices = speechSynthesis.getVoices();
       
       if (voices.length === 0) {
@@ -219,7 +186,6 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
         });
       }
       
-      // Select best available voice
       if (voices.length > 0) {
         const preferredVoice = 
           voices.find(voice => voice.name.toLowerCase().includes('karen')) ||
@@ -233,7 +199,6 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
         }
       }
       
-      // Event handlers
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = (event) => {
@@ -249,7 +214,7 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       setError(err instanceof Error ? err.message : 'Speech synthesis failed');
       setIsSpeaking(false);
     }
-  }, [generateSmartDescription]);
+  }, [generateNaturalDescription]);
 
   const stop = useCallback(() => {
     speechSynthesis.cancel();
@@ -264,7 +229,8 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       lastSpokenTime: 0,
       spokenPhrases: new Set(),
       lastSignificantChange: 0,
-      lastTextDetection: 0
+      lastTextDetection: 0,
+      lastSpokenText: ''
     };
   }, []);
 
