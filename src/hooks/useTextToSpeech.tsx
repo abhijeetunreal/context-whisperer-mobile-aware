@@ -11,29 +11,51 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
   const [error, setError] = useState<string | null>(null);
 
   const speak = useCallback(async (text: string) => {
+    if (!text || text.trim() === '') {
+      console.log('No text provided for speech');
+      return;
+    }
+
+    console.log('Speaking text:', text.substring(0, 50) + '...');
+    setError(null);
+
     if (!apiKey) {
-      console.warn('ElevenLabs API key not provided, using browser speech synthesis');
-      // Fallback to browser's built-in speech synthesis
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 0.8;
-      
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        setError('Speech synthesis failed');
-      };
-      
-      speechSynthesis.speak(utterance);
+      console.log('Using browser speech synthesis');
+      try {
+        // Stop any ongoing speech
+        speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 0.8;
+        
+        utterance.onstart = () => {
+          console.log('Browser speech started');
+          setIsSpeaking(true);
+        };
+        utterance.onend = () => {
+          console.log('Browser speech ended');
+          setIsSpeaking(false);
+        };
+        utterance.onerror = (event) => {
+          console.error('Browser speech error:', event);
+          setIsSpeaking(false);
+          setError('Speech synthesis failed');
+        };
+        
+        speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error('Browser speech synthesis error:', err);
+        setError('Browser speech not supported');
+      }
       return;
     }
 
     try {
       setIsSpeaking(true);
-      setError(null);
 
+      console.log('Using ElevenLabs API...');
       const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voiceId, {
         method: 'POST',
         headers: {
@@ -52,33 +74,54 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate speech');
+        throw new Error(`ElevenLabs API error: ${response.status}`);
       }
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
       
+      audio.oncanplaythrough = () => {
+        console.log('ElevenLabs audio ready to play');
+      };
+      
       audio.onended = () => {
+        console.log('ElevenLabs audio ended');
         setIsSpeaking(false);
         URL.revokeObjectURL(audioUrl);
       };
       
-      audio.onerror = () => {
+      audio.onerror = (event) => {
+        console.error('ElevenLabs audio playback error:', event);
         setIsSpeaking(false);
         setError('Audio playback failed');
         URL.revokeObjectURL(audioUrl);
       };
 
       await audio.play();
+      console.log('ElevenLabs audio playing');
     } catch (err) {
+      console.error('ElevenLabs TTS error:', err);
       setIsSpeaking(false);
       setError(err instanceof Error ? err.message : 'Unknown error');
-      console.error('Text-to-speech error:', err);
+      
+      // Fallback to browser speech
+      console.log('Falling back to browser speech synthesis');
+      try {
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        speechSynthesis.speak(utterance);
+      } catch (fallbackErr) {
+        console.error('Fallback speech also failed:', fallbackErr);
+      }
     }
   }, [apiKey, voiceId]);
 
   const stop = useCallback(() => {
+    console.log('Stopping speech');
     speechSynthesis.cancel();
     setIsSpeaking(false);
   }, []);

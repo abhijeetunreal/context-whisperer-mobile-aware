@@ -45,26 +45,26 @@ export const useObjectDetection = () => {
     setError(null);
     
     try {
-      console.log('Initializing enhanced MediaPipe Object Detector...');
+      console.log('Initializing MediaPipe Object Detector...');
       
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
       
-      // Using EfficientDet Lite0 with optimized settings for better accuracy
+      // Use a more reliable model configuration
       const objectDetector = await ObjectDetector.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
           delegate: "GPU"
         },
-        scoreThreshold: 0.05, // Very low threshold for small objects
-        maxResults: 25, // More objects for comprehensive detection
+        scoreThreshold: 0.3, // Higher threshold for more reliable detection
+        maxResults: 10, // Reasonable number of objects
         runningMode: "VIDEO"
       });
       
       objectDetectorRef.current = objectDetector;
       setIsReady(true);
-      console.log('Enhanced MediaPipe Object Detector initialized successfully');
+      console.log('MediaPipe Object Detector initialized successfully');
     } catch (err) {
       console.error('Failed to initialize MediaPipe:', err);
       setError(err instanceof Error ? err.message : 'Failed to initialize object detector');
@@ -90,13 +90,13 @@ export const useObjectDetection = () => {
     let horizontalMotion = 0;
     let verticalMotion = 0;
 
-    // Enhanced motion detection with better sensitivity
-    for (let i = 0; i < prev.length; i += 16) {
+    // Sample every 8th pixel for performance
+    for (let i = 0; i < prev.length; i += 32) {
       const prevBrightness = (prev[i] + prev[i + 1] + prev[i + 2]) / 3;
       const currBrightness = (curr[i] + curr[i + 1] + curr[i + 2]) / 3;
       const diff = Math.abs(prevBrightness - currBrightness);
       
-      if (diff > 8) {
+      if (diff > 15) {
         motionPixels++;
         totalDiff += diff;
         
@@ -113,14 +113,14 @@ export const useObjectDetection = () => {
       }
     }
 
-    const motionLevel = (totalDiff / (prev.length / 16)) * 100;
-    const isMotionDetected = motionLevel > 1.2;
+    const motionLevel = (totalDiff / (prev.length / 32)) * 100;
+    const isMotionDetected = motionLevel > 2;
     
     let motionDirection = 'none';
     if (isMotionDetected) {
       if (Math.abs(horizontalMotion) > Math.abs(verticalMotion)) {
         motionDirection = horizontalMotion > 0 ? 'right' : 'left';
-      } else if (Math.abs(verticalMotion) > 6) {
+      } else if (Math.abs(verticalMotion) > 10) {
         motionDirection = verticalMotion > 0 ? 'down' : 'up';
       } else {
         motionDirection = 'general';
@@ -136,136 +136,69 @@ export const useObjectDetection = () => {
     };
   }, []);
 
-  const analyzeObjectStability = useCallback((currentObjects: DetectedObject[]): DetectedObject[] => {
-    // Keep history of last 3 detections for stability
-    detectionHistoryRef.current.push(currentObjects);
-    if (detectionHistoryRef.current.length > 4) {
-      detectionHistoryRef.current.shift();
-    }
-
-    if (detectionHistoryRef.current.length < 2) {
-      return currentObjects.filter(obj => obj.confidence > 0.15);
-    }
-
-    // Filter objects that appear consistently across frames
-    const stableObjects: DetectedObject[] = [];
-    
-    currentObjects.forEach(obj => {
-      let consistentDetections = 1;
-      let totalConfidence = obj.confidence;
-      
-      detectionHistoryRef.current.slice(0, -1).forEach(historyFrame => {
-        const similarObject = historyFrame.find(histObj => 
-          histObj.name === obj.name && 
-          Math.abs(histObj.boundingBox.x - obj.boundingBox.x) < 0.15 &&
-          Math.abs(histObj.boundingBox.y - obj.boundingBox.y) < 0.15 &&
-          Math.abs(histObj.boundingBox.width - obj.boundingBox.width) < 0.1
-        );
-        if (similarObject) {
-          consistentDetections++;
-          totalConfidence += similarObject.confidence;
-        }
-      });
-
-      // Include object if detected in at least 2 out of last 4 frames with good confidence
-      const avgConfidence = totalConfidence / consistentDetections;
-      if (consistentDetections >= 2 && avgConfidence > 0.12) {
-        stableObjects.push({
-          ...obj,
-          confidence: avgConfidence // Use averaged confidence
-        });
-      }
-    });
-
-    return stableObjects;
-  }, []);
-
-  const generateDetailedEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
+  const generateEnvironmentContext = useCallback((objects: DetectedObject[], motion: MotionData): string => {
     if (objects.length === 0) {
       return motion.isMotionDetected 
-        ? `Dynamic scene with ${motion.motionDirection} motion detected but no distinct objects currently visible`
-        : 'Static environment - no clear objects or movement detected in current view';
+        ? `Scene with ${motion.motionDirection} movement detected but no clear objects identified`
+        : 'Environment visible but no specific objects currently detected';
     }
 
-    const objectTypes = objects.map(obj => obj.name);
-    const uniqueObjects = [...new Set(objectTypes)];
-    const highConfidenceObjects = objects.filter(obj => obj.confidence > 0.3);
-    const smallObjects = objects.filter(obj => obj.boundingBox.width * obj.boundingBox.height < 0.03);
+    const objectNames = objects.map(obj => obj.name);
+    const uniqueObjects = [...new Set(objectNames)];
     
-    // Enhanced categorization for better context
-    const people = objectTypes.filter(type => type === 'person').length;
-    const vehicles = objectTypes.filter(type => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(type));
-    const furniture = objectTypes.filter(type => ['chair', 'table', 'couch', 'bed', 'desk'].includes(type));
-    const electronics = objectTypes.filter(type => ['laptop', 'phone', 'tv', 'computer', 'monitor', 'keyboard', 'mouse'].includes(type));
-    const food = objectTypes.filter(type => ['cup', 'bottle', 'bowl', 'banana', 'apple', 'sandwich', 'pizza', 'cake'].includes(type));
-    const books = objectTypes.filter(type => ['book', 'newspaper'].includes(type));
-    const indoor = objectTypes.filter(type => ['door', 'window', 'wall', 'ceiling', 'floor'].includes(type));
-    const outdoor = objectTypes.filter(type => ['tree', 'sky', 'grass', 'building', 'road', 'cloud'].includes(type));
-
+    // Categorize objects
+    const people = objectNames.filter(name => name === 'person').length;
+    const vehicles = objectNames.filter(name => ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(name));
+    const furniture = objectNames.filter(name => ['chair', 'table', 'couch', 'bed'].includes(name));
+    const electronics = objectNames.filter(name => ['laptop', 'phone', 'tv', 'computer'].includes(name));
+    
     let context = '';
     
-    // Environment type assessment
-    if (outdoor.length > indoor.length) {
-      context += 'Outdoor environment detected with ';
-    } else if (indoor.length > 0 || furniture.length > 0) {
-      context += 'Indoor environment with ';
-    } else {
-      context += 'Mixed environment featuring ';
-    }
-
-    // Activity and object context
     if (people > 0) {
-      context += `${people} ${people === 1 ? 'person' : 'people'} present, `;
+      context += `${people} ${people === 1 ? 'person' : 'people'} detected. `;
     }
-
+    
     if (vehicles.length > 0) {
-      context += `transportation vehicles (${vehicles.slice(0, 2).join(', ')}) visible, `;
+      context += `Transportation vehicles including ${vehicles[0]} visible. `;
     }
-
+    
     if (furniture.length > 0 && electronics.length > 0) {
-      context += `workspace setup with furniture and technology, `;
-    } else if (books.length > 0) {
-      context += `reading or study materials present, `;
-    } else if (food.length > 0) {
-      context += `food and dining items visible, `;
+      context += 'Indoor workspace with furniture and technology. ';
+    } else if (furniture.length > 0) {
+      context += 'Indoor environment with furniture. ';
     }
-
-    // Object detail and quality
-    if (highConfidenceObjects.length > 0) {
-      const topObjects = highConfidenceObjects.slice(0, 3).map(obj => obj.name);
-      context += `clearly identifying ${topObjects.join(', ')} `;
-    }
-
-    if (smallObjects.length > 0) {
-      context += `plus ${smallObjects.length} smaller detailed objects `;
-    }
-
-    // Motion and activity level
+    
+    const topObjects = objects
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 3)
+      .map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`)
+      .join(', ');
+    
+    context += `Main objects: ${topObjects}. `;
+    
     if (motion.isMotionDetected) {
-      context += `with active ${motion.motionDirection} movement indicating ongoing activity (${motion.motionLevel}% motion intensity). `;
+      context += `Active ${motion.motionDirection} movement with ${motion.motionLevel}% intensity.`;
     } else {
-      context += `in a stable, stationary scene with minimal movement. `;
+      context += 'Scene is stable with minimal movement.';
     }
-
-    // Detection quality summary
-    const avgConfidence = objects.reduce((sum, obj) => sum + obj.confidence, 0) / objects.length;
-    context += `Scene analysis confidence: ${Math.round(avgConfidence * 100)}% with ${objects.length} total objects detected.`;
 
     return context;
   }, []);
 
   const detectObjects = useCallback(async (videoElement: HTMLVideoElement): Promise<ObjectDetectionResult | null> => {
     if (!objectDetectorRef.current || !isReady) {
+      console.log('Object detector not ready');
       return null;
     }
 
     if (!videoElement || videoElement.readyState < 2) {
+      console.log('Video element not ready');
       return null;
     }
 
-    // Throttle detection to avoid overwhelming the system
+    // Throttle detection
     const now = performance.now();
-    if (now - lastProcessTimeRef.current < 100) { // Minimum 100ms between detections
+    if (now - lastProcessTimeRef.current < 200) {
       return lastDetection;
     }
     lastProcessTimeRef.current = now;
@@ -273,6 +206,8 @@ export const useObjectDetection = () => {
     try {
       const startTimeMs = performance.now();
       const detections = objectDetectorRef.current.detectForVideo(videoElement, startTimeMs);
+      
+      console.log('Raw detections:', detections.detections.length);
       
       // Get frame data for motion analysis
       const canvas = document.createElement('canvas');
@@ -286,8 +221,8 @@ export const useObjectDetection = () => {
       
       const motion = analyzeMotion(imageData);
       
-      const rawObjects: DetectedObject[] = detections.detections.map(detection => ({
-        name: detection.categories[0]?.categoryName || 'unknown object',
+      const objects: DetectedObject[] = detections.detections.map(detection => ({
+        name: detection.categories[0]?.categoryName || 'unknown',
         confidence: detection.categories[0]?.score || 0,
         boundingBox: {
           x: detection.boundingBox?.originX || 0,
@@ -295,52 +230,27 @@ export const useObjectDetection = () => {
           width: detection.boundingBox?.width || 0,
           height: detection.boundingBox?.height || 0
         }
-      }));
+      })).filter(obj => obj.confidence > 0.3);
 
-      // Filter and stabilize objects with improved thresholds
-      const validObjects = rawObjects.filter(obj => 
-        obj.confidence > 0.08 && // Lower threshold for small objects
-        obj.boundingBox.width > 0.01 && 
-        obj.boundingBox.height > 0.01
-      );
+      console.log('Filtered objects:', objects.length, objects.map(obj => `${obj.name} (${Math.round(obj.confidence * 100)}%)`));
       
-      const stableObjects = analyzeObjectStability(validObjects);
+      const environmentContext = generateEnvironmentContext(objects, motion);
       
-      const environmentContext = generateDetailedEnvironmentContext(stableObjects, motion);
-      
-      // Enhanced real-time description with better reasoning
       let description = '';
-      if (stableObjects.length === 0) {
+      if (objects.length === 0) {
         description = motion.isMotionDetected 
-          ? `Movement detected (${motion.motionDirection}) but no clear objects currently identified`
-          : 'No distinct objects detected in current view - adjusting detection sensitivity';
-      } else if (stableObjects.length === 1) {
-        const obj = stableObjects[0];
-        const sizeDesc = obj.boundingBox.width * obj.boundingBox.height < 0.03 ? 'small ' : 
-                        obj.boundingBox.width * obj.boundingBox.height > 0.2 ? 'large ' : '';
-        description = `${sizeDesc}${obj.name} identified with ${Math.round(obj.confidence * 100)}% confidence`;
-        if (motion.isMotionDetected) {
-          description += `, ${motion.motionDirection} movement active`;
-        }
+          ? `Movement detected but no objects identified`
+          : 'No objects currently detected';
+      } else if (objects.length === 1) {
+        const obj = objects[0];
+        description = `${obj.name} detected with ${Math.round(obj.confidence * 100)}% confidence`;
       } else {
-        const objectNames = stableObjects.map(obj => obj.name);
-        const uniqueObjects = [...new Set(objectNames)];
-        const topConfident = stableObjects
-          .sort((a, b) => b.confidence - a.confidence)
-          .slice(0, 3)
-          .map(obj => obj.name);
-        
-        description = `${stableObjects.length} objects detected including ${topConfident.join(', ')}`;
-        if (uniqueObjects.length > 3) {
-          description += ` and ${uniqueObjects.length - 3} others`;
-        }
-        if (motion.isMotionDetected) {
-          description += `. Active ${motion.motionDirection} movement detected`;
-        }
+        const topObjects = objects.slice(0, 3).map(obj => obj.name);
+        description = `${objects.length} objects detected: ${topObjects.join(', ')}`;
       }
 
       const result: ObjectDetectionResult = {
-        objects: stableObjects,
+        objects,
         timestamp: new Date(),
         description,
         motion,
@@ -348,6 +258,7 @@ export const useObjectDetection = () => {
       };
 
       setLastDetection(result);
+      console.log('Detection result:', result);
       
       return result;
     } catch (err) {
@@ -355,7 +266,7 @@ export const useObjectDetection = () => {
       setError(err instanceof Error ? err.message : 'Detection failed');
       return null;
     }
-  }, [isReady, analyzeMotion, analyzeObjectStability, generateDetailedEnvironmentContext]);
+  }, [isReady, analyzeMotion, generateEnvironmentContext, lastDetection]);
 
   return {
     isLoading,

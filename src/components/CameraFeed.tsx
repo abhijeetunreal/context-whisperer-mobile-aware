@@ -51,17 +51,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
   // Initialize MediaPipe when component mounts
   useEffect(() => {
+    console.log('Initializing object detection...');
     objectDetection.initializeDetector();
   }, [objectDetection.initializeDetector]);
 
   // Start/stop camera based on isActive prop
   useEffect(() => {
     if (isActive && !camera.isActive) {
+      console.log('Starting camera...');
       camera.startCamera();
     } else if (!isActive && camera.isActive) {
+      console.log('Stopping camera...');
       camera.stopCamera();
     }
-  }, [isActive]);
+  }, [isActive, camera.isActive, camera.startCamera, camera.stopCamera]);
 
   // Cleanup intervals when component unmounts or camera stops
   useEffect(() => {
@@ -79,7 +82,6 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
 
   // Real-time object detection
   useEffect(() => {
-    // Clear existing intervals first
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
       detectionIntervalRef.current = null;
@@ -91,12 +93,15 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
       detectionIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
           try {
-            await objectDetection.detectObjects(camera.videoRef.current);
+            const result = await objectDetection.detectObjects(camera.videoRef.current);
+            if (result) {
+              console.log('Detection result:', result.objects.length, 'objects');
+            }
           } catch (error) {
             console.error('Object detection error:', error);
           }
         }
-      }, 500);
+      }, 300);
     }
 
     return () => {
@@ -105,11 +110,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         detectionIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, objectDetection.isReady]);
+  }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
   // Context analysis and voice descriptions
   useEffect(() => {
-    // Clear existing context interval first
     if (contextIntervalRef.current) {
       clearInterval(contextIntervalRef.current);
       contextIntervalRef.current = null;
@@ -130,14 +134,16 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             const objectResult = objectDetection.lastDetection;
             
             if (objectResult && objectResult.environmentContext) {
+              console.log('Environment context available:', objectResult.environmentContext);
+              
               // Voice announcements for accessibility
               if (voiceEnabled && !textToSpeech.isSpeaking) {
                 const contextDescription = objectResult.environmentContext;
                 
-                if (lastSpokenContextRef.current !== contextDescription && objectResult.objects.length > 0) {
+                if (lastSpokenContextRef.current !== contextDescription) {
+                  console.log('Speaking new context:', contextDescription);
                   textToSpeech.speak(contextDescription);
                   lastSpokenContextRef.current = contextDescription;
-                  console.log('Speaking context:', contextDescription);
                 }
               }
             }
@@ -147,7 +153,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             setIsAnalyzingContext(false);
           }
         }
-      }, 5000);
+      }, 8000); // Every 8 seconds for context analysis
     }
 
     return () => {
@@ -156,7 +162,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         contextIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking]);
+  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking, contextDetection.processFrame, objectDetection.lastDetection, textToSpeech.speak]);
 
   // Pass detected context to parent
   useEffect(() => {
