@@ -30,6 +30,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
   const textToSpeech = useTextToSpeech({ apiKey });
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const contextIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const voiceIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSpokenContextRef = useRef<string>('');
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
@@ -77,6 +78,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         clearInterval(contextIntervalRef.current);
         contextIntervalRef.current = null;
       }
+      if (voiceIntervalRef.current) {
+        clearInterval(voiceIntervalRef.current);
+        voiceIntervalRef.current = null;
+      }
     };
   }, []);
 
@@ -112,7 +117,71 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Context analysis and voice descriptions with improved triggering
+  // Dedicated voice description interval - every 3 seconds
+  useEffect(() => {
+    if (voiceIntervalRef.current) {
+      clearInterval(voiceIntervalRef.current);
+      voiceIntervalRef.current = null;
+    }
+
+    if (camera.isActive && voiceEnabled && objectDetection.isReady) {
+      console.log('Starting dedicated voice description interval every 3 seconds...');
+      
+      voiceIntervalRef.current = setInterval(async () => {
+        if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
+          console.log('Voice interval triggered - checking for content to speak...');
+          
+          try {
+            const objectResult = objectDetection.lastDetection;
+            
+            if (objectResult && objectResult.environmentContext) {
+              const naturalDescription = objectResult.environmentContext;
+              console.log('Voice description available:', naturalDescription.substring(0, 100) + '...');
+              
+              // Always speak if we have new content and voice is not currently active
+              if (naturalDescription && 
+                  naturalDescription.length > 20 && 
+                  !textToSpeech.isSpeaking &&
+                  lastSpokenContextRef.current !== naturalDescription) {
+                
+                console.log('🎤 Triggering voice description:', naturalDescription);
+                await textToSpeech.speak(naturalDescription);
+                lastSpokenContextRef.current = naturalDescription;
+              } else if (textToSpeech.isSpeaking) {
+                console.log('Voice already speaking, skipping this cycle');
+              } else if (lastSpokenContextRef.current === naturalDescription) {
+                console.log('Same content as before, skipping repetition');
+              } else {
+                console.log('Content too short or empty, skipping');
+              }
+            } else {
+              console.log('No object detection result or environment context available');
+              
+              // Provide basic fallback description if no objects detected
+              if (!textToSpeech.isSpeaking) {
+                const fallbackDescription = "I'm actively monitoring the environment but cannot clearly identify specific objects at the moment. The camera feed is active and processing.";
+                console.log('🎤 Providing fallback description');
+                await textToSpeech.speak(fallbackDescription);
+                lastSpokenContextRef.current = fallbackDescription;
+              }
+            }
+            
+          } catch (error) {
+            console.error('Voice description error:', error);
+          }
+        }
+      }, 3000); // Every 3 seconds
+    }
+
+    return () => {
+      if (voiceIntervalRef.current) {
+        clearInterval(voiceIntervalRef.current);
+        voiceIntervalRef.current = null;
+      }
+    };
+  }, [camera.isActive, voiceEnabled, objectDetection.isReady, textToSpeech.isSpeaking, objectDetection.lastDetection, textToSpeech.speak]);
+
+  // Context analysis interval - separate from voice
   useEffect(() => {
     if (contextIntervalRef.current) {
       clearInterval(contextIntervalRef.current);
@@ -120,7 +189,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && camera.videoRef.current && objectDetection.isReady) {
-      console.log('Starting enhanced context analysis with voice descriptions...');
+      console.log('Starting context analysis interval...');
       
       contextIntervalRef.current = setInterval(async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
@@ -130,33 +199,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             // Process context for environment analysis
             contextDetection.processFrame(camera.videoRef.current);
             
-            // Get current detection for voice description
-            const objectResult = objectDetection.lastDetection;
-            
-            if (objectResult) {
-              console.log('Processing voice description for context:', objectResult.environmentContext);
-              
-              // Voice announcements for accessibility
-              if (voiceEnabled && !textToSpeech.isSpeaking) {
-                const naturalDescription = objectResult.environmentContext;
-                
-                // Only speak if we have meaningful content and it's different from last spoken
-                if (naturalDescription && 
-                    naturalDescription.length > 10 && 
-                    lastSpokenContextRef.current !== naturalDescription) {
-                  
-                  console.log('Triggering voice description:', naturalDescription.substring(0, 100) + '...');
-                  await textToSpeech.speak(naturalDescription);
-                  lastSpokenContextRef.current = naturalDescription;
-                }
-              }
-              
-              // Pass context to parent if available from context detection
-              if (contextDetection.detectedContext) {
-                onContextDetected(contextDetection.detectedContext);
-              }
-            } else {
-              console.log('No object detection result available for voice description');
+            // Pass context to parent if available
+            if (contextDetection.detectedContext) {
+              onContextDetected(contextDetection.detectedContext);
             }
             
           } catch (error) {
@@ -165,7 +210,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             setIsAnalyzingContext(false);
           }
         }
-      }, 5000); // Every 5 seconds for context analysis and voice
+      }, 8000); // Every 8 seconds for context analysis
     }
 
     return () => {
@@ -174,7 +219,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
         contextIntervalRef.current = null;
       }
     };
-  }, [camera.isActive, objectDetection.isReady, voiceEnabled, textToSpeech.isSpeaking, contextDetection.processFrame, objectDetection.lastDetection, textToSpeech.speak, onContextDetected, contextDetection.detectedContext]);
+  }, [camera.isActive, objectDetection.isReady, contextDetection.processFrame, onContextDetected, contextDetection.detectedContext]);
 
   // Pass detected context to parent
   useEffect(() => {
@@ -212,7 +257,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           <div>
             <h3 className="font-semibold text-slate-800">AI-Powered Camera Feed</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Real-time object detection with annotations and voice descriptions' : 'Camera inactive'}
+              {camera.isActive ? 'Real-time object detection with voice descriptions every 3 seconds' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -334,7 +379,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
               )}
               {voiceEnabled && (
                 <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">
-                  Voice Active
+                  Voice Every 3s
                 </Badge>
               )}
             </div>
