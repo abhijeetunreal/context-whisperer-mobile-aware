@@ -11,6 +11,8 @@ interface EnvironmentState {
   lastObjects: string[];
   lastEnvironmentType: string;
   lastSpokenTime: number;
+  spokenPhrases: Set<string>;
+  lastSignificantChange: number;
 }
 
 export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: TextToSpeechOptions) => {
@@ -20,146 +22,206 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     lastDescription: '',
     lastObjects: [],
     lastEnvironmentType: '',
-    lastSpokenTime: 0
+    lastSpokenTime: 0,
+    spokenPhrases: new Set(),
+    lastSignificantChange: 0
   });
 
-  const generateChangeDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string): string => {
+  const detectTextInImage = useCallback(async (videoElement: HTMLVideoElement): Promise<string[]> => {
+    try {
+      // Create canvas to capture frame
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return [];
+
+      canvas.width = videoElement.videoWidth;
+      canvas.height = videoElement.videoHeight;
+      ctx.drawImage(videoElement, 0, 0);
+
+      // Simple text detection using image analysis
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      // Look for text-like patterns (high contrast edges, horizontal/vertical lines)
+      let textRegions = 0;
+      let highContrastPixels = 0;
+      
+      for (let i = 0; i < data.length; i += 16) {
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        const nextBrightness = (data[i + 4] + data[i + 5] + data[i + 6]) / 3;
+        const contrast = Math.abs(brightness - nextBrightness);
+        
+        if (contrast > 50) {
+          highContrastPixels++;
+        }
+      }
+      
+      // If significant text-like patterns detected
+      if (highContrastPixels > canvas.width * canvas.height * 0.02) {
+        textRegions++;
+        return ['text detected in image'];
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Text detection error:', error);
+      return [];
+    }
+  }, []);
+
+  const generateSmartDescription = useCallback((currentContext: string, currentObjects: string[], reasoning: string, detectedText?: string[]): string => {
     const now = Date.now();
     const timeSinceLastSpoken = now - environmentStateRef.current.lastSpokenTime;
+    const timeSinceLastChange = now - environmentStateRef.current.lastSignificantChange;
     const previousObjects = environmentStateRef.current.lastObjects;
     const previousEnvironment = environmentStateRef.current.lastEnvironmentType;
     
-    // Detect new objects that weren't there before
+    // If text is detected, prioritize text description
+    if (detectedText && detectedText.length > 0) {
+      const textDescription = "I can see text or writing in the view.";
+      if (!environmentStateRef.current.spokenPhrases.has(textDescription) || timeSinceLastSpoken > 15000) {
+        environmentStateRef.current.spokenPhrases.add(textDescription);
+        return textDescription;
+      }
+      return ''; // Skip if text description was recently spoken
+    }
+    
+    // Detect significant changes
     const newObjects = currentObjects.filter(obj => !previousObjects.includes(obj));
     const removedObjects = previousObjects.filter(obj => !currentObjects.includes(obj));
+    const hasSignificantChange = newObjects.length > 0 || removedObjects.length > 0;
     
-    // Determine environment type from context
+    // Determine environment type
     let currentEnvironmentType = 'general';
     if (currentContext.toLowerCase().includes('kitchen')) currentEnvironmentType = 'kitchen';
-    else if (currentContext.toLowerCase().includes('office') || currentContext.toLowerCase().includes('workspace')) currentEnvironmentType = 'office';
-    else if (currentContext.toLowerCase().includes('outdoor') || currentContext.toLowerCase().includes('street')) currentEnvironmentType = 'outdoor';
-    else if (currentContext.toLowerCase().includes('room') || currentContext.toLowerCase().includes('indoor')) currentEnvironmentType = 'indoor';
-    else if (currentContext.toLowerCase().includes('vehicle') || currentContext.toLowerCase().includes('car')) currentEnvironmentType = 'vehicle';
+    else if (currentContext.toLowerCase().includes('office')) currentEnvironmentType = 'office';
+    else if (currentContext.toLowerCase().includes('outdoor')) currentEnvironmentType = 'outdoor';
+    else if (currentContext.toLowerCase().includes('room')) currentEnvironmentType = 'indoor';
+    else if (currentContext.toLowerCase().includes('vehicle')) currentEnvironmentType = 'vehicle';
     
-    // Environment change detection
     const environmentChanged = currentEnvironmentType !== previousEnvironment && previousEnvironment !== '';
     
     let description = '';
     
-    // If environment changed significantly
+    // Only speak if there's a significant change or enough time has passed
+    if (!hasSignificantChange && !environmentChanged && timeSinceLastSpoken < 12000) {
+      return ''; // Skip repetitive descriptions
+    }
+    
+    // Environment transitions
     if (environmentChanged) {
       switch (currentEnvironmentType) {
         case 'kitchen':
-          description = "I can see we've moved to a kitchen area. ";
+          description = "Moved to a kitchen area. ";
           break;
         case 'office':
-          description = "We're now in what appears to be a workspace or office environment. ";
+          description = "Now in a workspace environment. ";
           break;
         case 'outdoor':
-          description = "The view has changed to an outdoor setting. ";
+          description = "View changed to outdoors. ";
           break;
         case 'indoor':
-          description = "We've moved to an indoor space. ";
+          description = "Moved to an indoor space. ";
           break;
         case 'vehicle':
-          description = "I can see we're now in or near a vehicle. ";
+          description = "Now in or near a vehicle. ";
           break;
-        default:
-          description = "The environment around us has changed. ";
       }
+      environmentStateRef.current.lastSignificantChange = now;
     }
     
-    // Describe new objects in natural language
+    // New objects detection
     if (newObjects.length > 0) {
       if (newObjects.length === 1) {
         const obj = newObjects[0];
         if (obj === 'person') {
-          description += "Someone has come into view. ";
-        } else if (['car', 'truck', 'bus', 'motorcycle'].includes(obj)) {
-          description += `A ${obj} has appeared in the scene. `;
+          description += "Someone appeared in view. ";
+        } else if (['car', 'truck', 'bus'].includes(obj)) {
+          description += `A ${obj} came into sight. `;
         } else if (['cat', 'dog', 'bird'].includes(obj)) {
-          description += `I can now see a ${obj} nearby. `;
+          description += `A ${obj} is now visible. `;
         } else {
-          description += `There's now a ${obj} visible. `;
+          description += `${obj} appeared. `;
         }
       } else if (newObjects.length <= 3) {
-        const lastObj = newObjects.pop();
-        description += `I can now see ${newObjects.join(', ')} and ${lastObj}. `;
-      } else {
-        description += `Several new objects have come into view including ${newObjects.slice(0, 2).join(' and ')}. `;
+        description += `New objects: ${newObjects.slice(0, 2).join(', ')}${newObjects.length > 2 ? ' and more' : ''}. `;
       }
+      environmentStateRef.current.lastSignificantChange = now;
     }
     
-    // Describe what's no longer visible
-    if (removedObjects.length > 0 && removedObjects.length <= 2) {
-      if (removedObjects.includes('person')) {
-        description += "The person has moved out of view. ";
-      } else if (removedObjects.length === 1) {
-        description += `The ${removedObjects[0]} is no longer visible. `;
-      } else {
-        description += `The ${removedObjects.join(' and ')} have moved out of sight. `;
-      }
-    }
-    
-    // Add contextual reasoning if there's movement or interaction
+    // Movement detection
     if (reasoning.includes('motion') || reasoning.includes('moving')) {
-      if (reasoning.includes('person')) {
-        description += "There's someone moving around. ";
-      } else if (reasoning.includes('vehicle')) {
-        description += "I can see vehicle movement. ";
-      } else {
-        description += "There's some movement in the scene. ";
+      if (reasoning.includes('person') && !description.includes('Someone')) {
+        description += "Movement detected. ";
+      } else if (reasoning.includes('vehicle') && !description.includes('vehicle')) {
+        description += "Vehicle movement. ";
       }
     }
     
-    // If nothing significant changed but enough time has passed, give a brief update
-    if (!description && timeSinceLastSpoken > 10000 && currentObjects.length > 0) {
+    // Avoid repetitive fallback phrases
+    if (!description && timeSinceLastChange > 20000 && currentObjects.length > 0) {
       const dominantObjects = currentObjects.slice(0, 2);
       if (dominantObjects.includes('person')) {
-        description = "I can still see people in the area. ";
+        description = "People present in the area. ";
       } else if (dominantObjects.some(obj => ['car', 'truck', 'bus'].includes(obj))) {
-        description = "Vehicles remain in view. ";
-      } else {
-        description = `The scene continues to show ${dominantObjects[0]}${dominantObjects.length > 1 ? ' and other objects' : ''}. `;
+        description = "Vehicles in view. ";
+      } else if (dominantObjects.length > 0) {
+        description = `Scene shows ${dominantObjects[0]}${dominantObjects.length > 1 ? ' and other items' : ''}. `;
       }
     }
     
-    // Update tracking state
+    // Check against recently spoken phrases
+    const trimmedDescription = description.trim();
+    if (trimmedDescription && !environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
+      environmentStateRef.current.spokenPhrases.add(trimmedDescription);
+      
+      // Clear old phrases periodically
+      if (environmentStateRef.current.spokenPhrases.size > 10) {
+        environmentStateRef.current.spokenPhrases.clear();
+      }
+    } else if (environmentStateRef.current.spokenPhrases.has(trimmedDescription)) {
+      return ''; // Skip if recently spoken
+    }
+    
+    // Update state
     environmentStateRef.current = {
-      lastDescription: description,
+      ...environmentStateRef.current,
+      lastDescription: trimmedDescription,
       lastObjects: [...currentObjects],
       lastEnvironmentType: currentEnvironmentType,
       lastSpokenTime: now
     };
     
-    return description.trim() || "Monitoring the environment for changes.";
+    return trimmedDescription;
   }, []);
 
-  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string) => {
+  const speak = useCallback(async (text: string, currentObjects?: string[], reasoning?: string, videoElement?: HTMLVideoElement) => {
     if (!text || text.trim() === '') {
-      console.log('🎤 No text provided for speech');
       return;
     }
 
-    // Process text for change detection if objects and reasoning are provided
+    // Detect text in image if video element is provided
+    let detectedText: string[] = [];
+    if (videoElement) {
+      detectedText = await detectTextInImage(videoElement);
+    }
+
+    // Generate smart description that avoids repetition
     let processedText = text;
     if (currentObjects && reasoning) {
-      processedText = generateChangeDescription(text, currentObjects, reasoning);
+      processedText = generateSmartDescription(text, currentObjects, reasoning, detectedText);
     }
 
-    // Skip if the same content was just spoken
-    if (processedText === environmentStateRef.current.lastDescription && 
-        Date.now() - environmentStateRef.current.lastSpokenTime < 5000) {
-      console.log('🎤 Same content recently spoken, skipping...');
+    // Skip if no meaningful content to speak
+    if (!processedText || processedText.trim() === '') {
       return;
     }
 
-    console.log('🎤 Starting natural voice description:', processedText.substring(0, 100) + '...');
+    console.log('🎤 Speaking:', processedText);
     setError(null);
 
-    // Stop any ongoing speech first
+    // Stop any ongoing speech
     if (speechSynthesis.speaking) {
-      console.log('🎤 Stopping ongoing speech');
       speechSynthesis.cancel();
       await new Promise(resolve => setTimeout(resolve, 100));
     }
@@ -169,16 +231,15 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
     try {
       const utterance = new SpeechSynthesisUtterance(processedText);
       
-      // Configure speech settings for natural delivery
-      utterance.rate = 0.85;
+      // Configure for natural speech
+      utterance.rate = 0.9;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       
-      // Wait for voices to be available
+      // Get available voices
       let voices = speechSynthesis.getVoices();
       
       if (voices.length === 0) {
-        console.log('🎤 Waiting for voices to load...');
         await new Promise<void>((resolve) => {
           const loadVoices = () => {
             voices = speechSynthesis.getVoices();
@@ -193,61 +254,39 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
         });
       }
       
-      // Select natural-sounding voice
+      // Select best available voice
       if (voices.length > 0) {
         const preferredVoice = 
           voices.find(voice => voice.name.toLowerCase().includes('karen')) ||
           voices.find(voice => voice.name.toLowerCase().includes('samantha')) ||
-          voices.find(voice => voice.name.toLowerCase().includes('susan')) ||
           voices.find(voice => voice.lang.startsWith('en-US') && voice.name.toLowerCase().includes('female')) ||
           voices.find(voice => voice.lang.startsWith('en-US')) ||
-          voices.find(voice => voice.lang.startsWith('en')) ||
           voices[0];
         
         if (preferredVoice) {
           utterance.voice = preferredVoice;
-          console.log('🎤 Selected voice:', preferredVoice.name);
         }
       }
       
-      // Set up event handlers
-      utterance.onstart = () => {
-        console.log('🎤 Natural speech started');
-        setIsSpeaking(true);
-      };
-      
-      utterance.onend = () => {
-        console.log('🎤 Natural speech completed');
-        setIsSpeaking(false);
-      };
-      
+      // Event handlers
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = (event) => {
         console.error('🎤 Speech error:', event.error);
         setIsSpeaking(false);
         setError(`Speech error: ${event.error}`);
       };
       
-      // Start speaking
-      console.log('🎤 Starting natural speech synthesis...');
       speechSynthesis.speak(utterance);
-      
-      // Safety timeout
-      setTimeout(() => {
-        if (isSpeaking && !speechSynthesis.speaking) {
-          console.log('🎤 Speech timeout - resetting state');
-          setIsSpeaking(false);
-        }
-      }, 15000);
       
     } catch (err) {
       console.error('🎤 Speech setup error:', err);
       setError(err instanceof Error ? err.message : 'Speech synthesis failed');
       setIsSpeaking(false);
     }
-  }, [isSpeaking, generateChangeDescription]);
+  }, [generateSmartDescription, detectTextInImage]);
 
   const stop = useCallback(() => {
-    console.log('🎤 Stopping speech manually');
     speechSynthesis.cancel();
     setIsSpeaking(false);
   }, []);
@@ -257,7 +296,9 @@ export const useTextToSpeech = ({ voiceId = '9BWtsMINqrJLrRacOk9x', apiKey }: Te
       lastDescription: '',
       lastObjects: [],
       lastEnvironmentType: '',
-      lastSpokenTime: 0
+      lastSpokenTime: 0,
+      spokenPhrases: new Set(),
+      lastSignificantChange: 0
     };
   }, []);
 

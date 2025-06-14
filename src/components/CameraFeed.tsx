@@ -123,7 +123,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     };
   }, [camera.isActive, objectDetection.isReady, objectDetection.detectObjects]);
 
-  // Enhanced voice description with natural change detection
+  // Enhanced voice description with text detection and smart change detection
   useEffect(() => {
     if (voiceIntervalRef.current) {
       clearInterval(voiceIntervalRef.current);
@@ -131,43 +131,35 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
     }
 
     if (camera.isActive && voiceEnabled && objectDetection.isReady) {
-      console.log('🎤 Starting natural voice descriptions with change detection...');
+      console.log('🎤 Starting smart voice descriptions with text detection...');
       
-      const triggerNaturalVoiceDescription = async () => {
+      const triggerSmartVoiceDescription = async () => {
         if (camera.videoRef.current && camera.videoRef.current.readyState >= 2) {
-          console.log('🎤 Natural voice interval triggered...');
+          console.log('🎤 Smart voice interval triggered...');
           
           try {
             const objectResult = objectDetection.lastDetection;
             
-            if (objectResult) {
+            if (objectResult && !textToSpeech.isSpeaking) {
               const currentObjects = objectResult.objects.map(obj => obj.name);
-              console.log('🎤 Current objects for voice:', currentObjects);
+              console.log('🎤 Current objects for smart voice:', currentObjects);
               
-              if (!textToSpeech.isSpeaking) {
-                console.log('🎤 Speaking natural environment description...');
-                await textToSpeech.speak(
-                  objectResult.environmentContext, 
-                  currentObjects, 
-                  objectResult.reasoning
-                );
-              } else {
-                console.log('🎤 Already speaking, skipping...');
-              }
-            } else {
-              const fallbackDescription = "Actively monitoring the environment for changes.";
-              if (!textToSpeech.isSpeaking) {
-                await textToSpeech.speak(fallbackDescription, [], "monitoring");
-              }
+              // Pass video element for text detection
+              await textToSpeech.speak(
+                objectResult.environmentContext, 
+                currentObjects, 
+                objectResult.reasoning,
+                camera.videoRef.current
+              );
             }
           } catch (error) {
-            console.error('🎤 Natural voice description error:', error);
+            console.error('🎤 Smart voice description error:', error);
           }
         }
       };
 
-      triggerNaturalVoiceDescription();
-      voiceIntervalRef.current = setInterval(triggerNaturalVoiceDescription, 4000);
+      triggerSmartVoiceDescription();
+      voiceIntervalRef.current = setInterval(triggerSmartVoiceDescription, 5000);
     }
 
     return () => {
@@ -252,9 +244,9 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             )}
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">MediaPipe Enhanced Detection</h3>
+            <h3 className="font-semibold text-slate-800">Enhanced Object Detection</h3>
             <p className="text-sm text-slate-600">
-              {camera.isActive ? 'Superior accuracy for everyday objects' : 'Camera inactive'}
+              {camera.isActive ? 'Smart tracking with text detection' : 'Camera inactive'}
             </p>
           </div>
         </div>
@@ -262,7 +254,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.isLoading && (
             <Badge variant="outline" className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              Loading MediaPipe
+              Loading AI
             </Badge>
           )}
           {isAnalyzingContext && (
@@ -274,13 +266,13 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {objectDetection.lastDetection && objectDetection.lastDetection.objects.length > 0 && (
             <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
               <Activity className="w-3 h-3 text-green-600" />
-              {objectDetection.lastDetection.objects.length} Objects
+              {objectDetection.lastDetection.objects.length} Tracked
             </Badge>
           )}
           {textToSpeech.isSpeaking && voiceEnabled && (
             <Badge variant="outline" className="flex items-center gap-1 bg-purple-50">
               <Volume2 className="w-3 h-3 animate-pulse text-purple-600" />
-              Natural Voice
+              Smart Voice
             </Badge>
           )}
           <Button 
@@ -332,8 +324,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             }}
           />
           
-          {/* Enhanced Object Annotations with MediaPipe precision */}
-          {camera.isActive && objectDetection.lastDetection && camera.videoRef.current && (
+          {/* Enhanced Object Annotations with improved tracking */}
+          {camera.isActive && 
+           objectDetection.lastDetection && 
+           objectDetection.lastDetection.objects.length > 0 && 
+           camera.videoRef.current && (
             <ObjectAnnotations
               objects={objectDetection.lastDetection.objects}
               videoWidth={camera.videoRef.current.videoWidth}
@@ -347,8 +342,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <CameraOff className="w-12 h-12 text-slate-400 mx-auto mb-2" />
-                <p className="text-slate-500">MediaPipe enhanced object detection</p>
-                <p className="text-xs text-slate-400 mt-1">Superior accuracy for daily life objects</p>
+                <p className="text-slate-500">Smart object detection with tracking</p>
+                <p className="text-xs text-slate-400 mt-1">Includes text detection and voice descriptions</p>
               </div>
             </div>
           )}
@@ -356,11 +351,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({
           {camera.isActive && (
             <div className="absolute top-2 right-2 flex gap-2">
               <Badge variant="default" className="bg-blue-500 text-white text-xs">
-                MediaPipe
+                AI Tracking
               </Badge>
               {objectDetection.isReady && (
                 <Badge variant="secondary" className="bg-green-500 text-white text-xs">
-                  Enhanced AI
+                  Enhanced
                 </Badge>
               )}
               {voiceEnabled && (
